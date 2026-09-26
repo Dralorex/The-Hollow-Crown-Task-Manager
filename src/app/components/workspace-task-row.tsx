@@ -178,7 +178,11 @@ function TaskEditorMenu({
     <MenuSurface
       open={open}
       onClose={close}
-      widthClass="w-[min(18rem,calc(100vw-1rem))]"
+      widthClass={
+        panel === "menu"
+          ? "w-max min-w-[9.5rem] max-w-[min(18rem,calc(100vw-1rem))]"
+          : "w-[min(18rem,calc(100vw-1rem))]"
+      }
       trigger={({ ref }) => (
         <button
           ref={ref}
