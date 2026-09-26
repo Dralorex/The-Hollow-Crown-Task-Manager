@@ -513,8 +513,14 @@ export function WorkspaceTaskRow({
     >
       <TaskUrgencyEdge priority={task.priority} dueDate={task.dueDate} />
 
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
+      <div
+        className={
+          expanded
+            ? "flex flex-col items-stretch gap-3"
+            : "flex flex-wrap items-start justify-between gap-3"
+        }
+      >
+        <div className={expanded ? "min-w-0 w-full" : "min-w-0 flex-1"}>
           <div
             className={
               expanded
@@ -760,7 +766,13 @@ export function WorkspaceTaskRow({
           ) : null}
         </div>
 
-        <div className="flex max-w-full shrink-0 flex-col items-end gap-2">
+        <div
+          className={
+            expanded
+              ? "flex w-full min-w-0 flex-col items-stretch gap-2"
+              : "flex max-w-full shrink-0 flex-col items-end gap-2"
+          }
+        >
           {!expanded && (canClaim || canEdit) ? (
             <div
               className="flex flex-wrap items-center justify-end gap-2"
@@ -794,7 +806,7 @@ export function WorkspaceTaskRow({
 
           {expanded ? (
             <div
-              className="flex w-full max-w-xs flex-col items-stretch gap-2 sm:w-72"
+              className="flex w-full min-w-0 flex-col items-stretch gap-2"
               onClick={(e) => e.stopPropagation()}
             >
               {task.tags.length > 0 ? (
