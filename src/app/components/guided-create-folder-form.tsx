@@ -1,10 +1,12 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { InlineActionForm } from "@/app/components/forms";
+import { OnboardingPrompt } from "@/app/components/onboarding-prompt";
 import { TagSuggestInput } from "@/app/components/tag-suggest-input";
 import { useWorkspaceOnboarding } from "@/app/components/workspace-onboarding-context";
 import { createFolderAction } from "@/app/actions/tasks";
+import { focusOnboardingStep } from "@/lib/onboarding-targets";
 import { nextFolderCreateStep } from "@/lib/workspace-onboarding";
 
 function blinkClass(on: boolean) {
@@ -32,9 +34,16 @@ export function GuidedCreateFolderForm({
   roleNames: string[];
   canSetAccess: boolean;
 }) {
-  const { active, step, setStep, blink, track } = useWorkspaceOnboarding();
+  const { active, step, setStep, blink, track, hasRole } =
+    useWorkspaceOnboarding();
   const [name, setName] = useState("");
   const [nameClicked, setNameClicked] = useState(false);
+  /** Hide Pick Roles tip while the field is focused; advance on leave/add. */
+  const [rolesTipPaused, setRolesTipPaused] = useState(false);
+
+  useEffect(() => {
+    if (step !== "folder-roles") setRolesTipPaused(false);
+  }, [step]);
 
   function advanceFrom(current: typeof step) {
     if (!active) return;
@@ -45,9 +54,16 @@ export function GuidedCreateFolderForm({
     setStep(nextFolderCreateStep(current, canSetAccess));
   }
 
+  function leaveRolesStep() {
+    if (active && step === "folder-roles") advanceFrom("folder-roles");
+  }
+
   const showNameBlink = blink("folder-name") && !nameClicked;
+  const showRolesTip =
+    active && step === "folder-roles" && !rolesTipPaused;
 
   return (
+    <>
     <InlineActionForm
       className="flex flex-col gap-2"
       action={createFolderAction}
@@ -103,11 +119,18 @@ export function GuidedCreateFolderForm({
                 ? undefined
                 : "Leave empty for all members. Pick roles to restrict access."
             }
+            onInputFocus={() => {
+              if (active && step === "folder-roles") setRolesTipPaused(true);
+            }}
+            onInputBlur={
+              active && step === "folder-roles" ? leaveRolesStep : undefined
+            }
+            onEnterPress={
+              active && step === "folder-roles" ? leaveRolesStep : undefined
+            }
             onCommittedTagsChange={(list) => {
-              // Advance only when a role is actually picked/committed — not
-              // on keystrokes or Enter (which now moves focus like Tab).
               if (active && step === "folder-roles" && list.length > 0) {
-                advanceFrom("folder-roles");
+                leaveRolesStep();
               }
             }}
           />
@@ -210,5 +233,23 @@ export function GuidedCreateFolderForm({
         null
       ) : null}
     </InlineActionForm>
+
+    {showRolesTip ? (
+      <OnboardingPrompt
+        title="Who can see this folder?"
+        body={
+          hasRole
+            ? "Pick the role you created from the suggestions (or leave empty for everyone). The tip hides when you open the field, then moves on after you add a role, tap away, dismiss the keyboard, or press Enter."
+            : "Roles is optional — leave empty for everyone, or pick roles from the list to restrict access."
+        }
+        actionLabel="Pick Roles"
+        onAction={() => {
+          setRolesTipPaused(true);
+          focusOnboardingStep("folder-roles");
+        }}
+        onNext={() => setStep("folder-hide")}
+      />
+    ) : null}
+    </>
   );
 }

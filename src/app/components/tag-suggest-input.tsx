@@ -56,6 +56,12 @@ export function TagSuggestInput({
    * picked, or blur-applied) — not on every keystroke or bare Enter.
    */
   onCommittedTagsChange,
+  /** Visible input focused (e.g. hide an onboarding tip). */
+  onInputFocus,
+  /** Field blurred after commit attempt (click-out / keyboard dismiss). */
+  onInputBlur,
+  /** Enter pressed on the field (after preventDefault; draft may be committed). */
+  onEnterPress,
 }: {
   tags: string[];
   name?: string;
@@ -80,6 +86,9 @@ export function TagSuggestInput({
   commitTagOnEnter?: boolean;
   dataOnboarding?: string;
   onCommittedTagsChange?: (tags: string[]) => void;
+  onInputFocus?: () => void;
+  onInputBlur?: () => void;
+  onEnterPress?: () => void;
 }) {
   const useChips = Boolean(commitTagOnEnter && allowMultiple);
   const [open, setOpen] = useState(false);
@@ -126,6 +135,12 @@ export function TagSuggestInput({
 
   const onCommittedTagsChangeRef = useRef(onCommittedTagsChange);
   onCommittedTagsChangeRef.current = onCommittedTagsChange;
+  const onInputFocusRef = useRef(onInputFocus);
+  onInputFocusRef.current = onInputFocus;
+  const onInputBlurRef = useRef(onInputBlur);
+  onInputBlurRef.current = onInputBlur;
+  const onEnterPressRef = useRef(onEnterPress);
+  onEnterPressRef.current = onEnterPress;
 
   function emitCommitted(list: string[]) {
     onCommittedTagsChangeRef.current?.(list);
@@ -257,6 +272,7 @@ export function TagSuggestInput({
       // Phone Done/check dismisses the keyboard via blur — apply typed tags.
       commitTypedTagFromInput();
       setOpen(false);
+      onInputBlurRef.current?.();
     }, 160);
   }
 
@@ -345,11 +361,16 @@ export function TagSuggestInput({
 
   function onEnterKey(e: React.KeyboardEvent<HTMLInputElement>) {
     if (e.key !== "Enter") return;
-    // Never commit or submit on Enter — parent create forms treat Enter as
-    // Tab. Tags/roles are added via suggestion pick or blur (phone Done).
+    // Never submit on Enter. Optional onEnterPress (e.g. onboarding) can
+    // advance; otherwise the parent form treats Enter as Tab.
     if (e.nativeEvent.isComposing) return;
-    if (!commitTagOnEnter && !allowMultiple) return;
+    if (!commitTagOnEnter && !allowMultiple && !onEnterPressRef.current) return;
     e.preventDefault();
+    commitTypedTagFromInput();
+    if (onEnterPressRef.current) {
+      e.stopPropagation();
+      onEnterPressRef.current();
+    }
   }
 
   const listMaxHeight = `${MAX_VISIBLE_SUGGESTIONS * SUGGESTION_ROW_REM}rem`;
@@ -486,8 +507,12 @@ export function TagSuggestInput({
           onFocus={() => {
             cancelBlurClose();
             setOpen(true);
+            onInputFocusRef.current?.();
           }}
-          onClick={() => setOpen(true)}
+          onClick={() => {
+            setOpen(true);
+            onInputFocusRef.current?.();
+          }}
           onBlur={scheduleCloseOnBlur}
           onKeyDown={onEnterKey}
         />
