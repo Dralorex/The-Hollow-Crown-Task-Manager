@@ -313,10 +313,11 @@ export function FloatingChatWidget({
     <div className="pointer-events-none fixed bottom-5 right-5 z-50 flex flex-col items-end gap-3">
       {open ? (
         <div
-          className="rowgon-menu-popover pointer-events-auto flex h-[min(34rem,calc(100vh-6.5rem))] w-[min(22.5rem,calc(100vw-1.5rem))] flex-col overflow-hidden rounded-2xl animate-[rowgon-rise_220ms_ease]"
+          className="pointer-events-auto h-[min(34rem,calc(100vh-6.5rem))] w-[min(22.5rem,calc(100vw-1.5rem))] animate-[rowgon-rise_220ms_ease]"
           role="dialog"
           aria-label="Chat"
         >
+        <div className="rowgon-menu-popover flex h-full w-full flex-col overflow-hidden rounded-2xl">
           <header className="flex shrink-0 items-center justify-between gap-2 border-b border-[color:var(--rowgon-deep)]/10 px-3 py-2.5">
             <div className="min-w-0">
               {view === "thread" ? (
@@ -526,6 +527,7 @@ export function FloatingChatWidget({
           {view === "thread" && !thread && pending ? (
             <p className="px-3 py-4 text-sm text-[color:var(--rowgon-deep)]/55">Loading chat…</p>
           ) : null}
+        </div>
         </div>
       ) : null}
 

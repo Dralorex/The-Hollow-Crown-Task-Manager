@@ -178,7 +178,7 @@ function TaskEditorMenu({
     <MenuSurface
       open={open}
       onClose={close}
-      widthClass="w-72"
+      widthClass="w-[min(18rem,calc(100vw-1rem))]"
       trigger={({ ref }) => (
         <button
           ref={ref}
@@ -237,7 +237,7 @@ function TaskEditorMenu({
 
       {panel === "edit" ? (
         <form
-          className="space-y-2 px-3 py-2"
+          className="min-w-0 space-y-2 px-3 py-2"
           onSubmit={saveEdit}
           onKeyDown={enterAdvancesFocus}
         >
@@ -245,7 +245,7 @@ function TaskEditorMenu({
           <input
             value={name}
             onChange={(e) => setName(e.target.value)}
-            className="rowgon-input w-full text-sm"
+            className="rowgon-input w-full min-w-0 text-sm"
             placeholder="Task Name"
             required
             autoFocus
@@ -253,13 +253,13 @@ function TaskEditorMenu({
           <textarea
             value={description}
             onChange={(e) => setDescription(e.target.value)}
-            className="rowgon-input min-h-[4rem] w-full text-sm"
+            className="rowgon-input min-h-[4rem] w-full min-w-0 text-sm"
             placeholder="Description"
           />
           <select
             value={priority}
             onChange={(e) => setPriority(e.target.value as TaskPriority)}
-            className="rowgon-input w-full text-sm"
+            className="rowgon-input w-full min-w-0 text-sm"
           >
             {TASK_PRIORITIES.map((p) => (
               <option key={p} value={p}>
@@ -271,7 +271,7 @@ function TaskEditorMenu({
             type="date"
             value={dueDate}
             onChange={(e) => setDueDate(e.target.value)}
-            className="rowgon-input w-full text-sm"
+            className="rowgon-input rowgon-input-date w-full min-w-0 text-sm"
           />
           {error ? <p className="text-xs text-[#9b2f22]">{error}</p> : null}
           <div className="flex gap-2">

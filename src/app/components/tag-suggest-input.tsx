@@ -361,7 +361,7 @@ export function TagSuggestInput({
             ref={panelRef}
             id={listId}
             role="listbox"
-            className="rowgon-menu-popover fixed z-[200] overflow-hidden rounded-lg py-1"
+            className="fixed z-[200] overflow-hidden"
             style={{
               top: coords?.top ?? 0,
               left: coords?.left ?? 0,
@@ -369,6 +369,7 @@ export function TagSuggestInput({
               visibility: coords ? "visible" : "hidden",
             }}
           >
+            <div className="rowgon-menu-popover overflow-hidden rounded-lg py-1">
             {clearOptionLabel && (useChips ? chips.length > 0 || draft.trim() : value.trim()) ? (
               <button
                 type="button"
@@ -433,6 +434,7 @@ export function TagSuggestInput({
                   );
                 })
               )}
+            </div>
             </div>
           </div>,
           document.body,
