@@ -41,17 +41,12 @@ export function selectorForStep(
     "due-clear": '#workspace-add-task [data-onboarding="due-clear"]',
     "claim-pool": '#workspace-add-task select[name="assignTo"]',
     "claim-pool-info": '#workspace-add-task select[name="assignTo"]',
-    tags: '#workspace-add-task input[data-onboarding="tags"]',
     "tags-info": '#workspace-add-task input[data-onboarding="tags"]',
-    "one-off": '#workspace-add-task [data-onboarding="cadence-one-off"]',
     "one-off-info":
       '#workspace-add-task [data-onboarding="cadence-one-off"]',
-    daily: '#workspace-add-task [data-onboarding="cadence-daily"]',
     "daily-info": '#workspace-add-task [data-onboarding="cadence-daily"]',
-    weekly: '#workspace-add-task [data-onboarding="cadence-weekly"]',
     "weekly-info":
       '#workspace-add-task [data-onboarding="cadence-weekly"]',
-    monthly: '#workspace-add-task [data-onboarding="cadence-monthly"]',
     "monthly-info":
       '#workspace-add-task [data-onboarding="cadence-monthly"]',
     "task-menu-info": '[data-onboarding="task-menu"]',
@@ -88,7 +83,7 @@ function isTextEntry(
  * Focus/click run synchronously in the caller’s user-gesture turn so mobile
  * soft keyboards open. Scrolling happens afterward and must not delay focus.
  */
-export function focusOnboardingField(selector: string) {
+function focusOnboardingField(selector: string) {
   if (typeof document === "undefined") return;
   const el = document.querySelector(selector);
   if (!(el instanceof HTMLElement)) return;
@@ -142,7 +137,7 @@ export function focusOnboardingField(selector: string) {
 }
 
 /** Click a guided control (open panel, Reset, Create role, etc.). */
-export function clickOnboardingTarget(selector: string) {
+function clickOnboardingTarget(selector: string) {
   if (typeof document === "undefined") return;
   const el = document.querySelector(selector);
   if (!(el instanceof HTMLElement)) return;

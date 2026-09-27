@@ -45,8 +45,8 @@ export function TagSuggestInput({
   allowMultiple = false,
   keepOpenOnPick = false,
   /**
-   * When true with allowMultiple, use chip UI. Tags commit on suggestion
-   * pick or blur (phone Done) — not Enter, which advances focus like Tab.
+   * When true with allowMultiple, use chip UI. Drafts commit on suggestion
+   * pick, blur (phone Done), or Enter (when onEnterPress / allowMultiple).
    */
   commitTagOnEnter = false,
   /** Optional marker on the visible input for onboarding focus targets. */

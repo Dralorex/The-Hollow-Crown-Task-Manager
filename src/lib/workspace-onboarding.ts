@@ -27,15 +27,10 @@ export type WorkspaceOnboardingStep =
   | "due-clear"
   | "claim-pool"
   | "claim-pool-info"
-  | "tags"
   | "tags-info"
-  | "one-off"
   | "one-off-info"
-  | "daily"
   | "daily-info"
-  | "weekly"
   | "weekly-info"
-  | "monthly"
   | "monthly-info"
   | "task-menu-info"
   | "submit"
@@ -59,17 +54,17 @@ export type OnboardingPreference = {
   updatedAt?: string;
 };
 
-export const SETUP_DISMISS_KEY = (workspaceId: string) =>
+const SETUP_DISMISS_KEY = (workspaceId: string) =>
   `rowgon-setup-dismissed:${workspaceId}`;
 
-export const FOLDERS_OPEN_KEY = (workspaceId: string) =>
+const FOLDERS_OPEN_KEY = (workspaceId: string) =>
   `rowgon-folders-open:${workspaceId}`;
 
-export const ONBOARDING_STEP_KEY = (workspaceId: string) =>
+const ONBOARDING_STEP_KEY = (workspaceId: string) =>
   `rowgon-onboarding-step:${workspaceId}`;
 
 /** User-scoped preference (survives workspace switches). */
-export const ONBOARDING_PREF_KEY = "rowgon-onboarding-pref:v1";
+const ONBOARDING_PREF_KEY = "rowgon-onboarding-pref:v1";
 
 const ALL_STEPS: WorkspaceOnboardingStep[] = [
   "roles-open",
@@ -99,23 +94,27 @@ const ALL_STEPS: WorkspaceOnboardingStep[] = [
   "due-clear",
   "claim-pool",
   "claim-pool-info",
-  "tags",
   "tags-info",
-  "one-off",
   "one-off-info",
-  "daily",
   "daily-info",
-  "weekly",
   "weekly-info",
-  "monthly",
   "monthly-info",
   "task-menu-info",
   "submit",
   "done",
 ];
 
+/** Old localStorage step ids → current info steps. */
+const LEGACY_STEP_ALIASES: Record<string, WorkspaceOnboardingStep> = {
+  tags: "tags-info",
+  "one-off": "one-off-info",
+  daily: "daily-info",
+  weekly: "weekly-info",
+  monthly: "monthly-info",
+};
+
 /** Full-track roles tour (before folders) so folder role pickers have options. */
-export const ROLE_CREATE_STEPS: WorkspaceOnboardingStep[] = [
+const ROLE_CREATE_STEPS: WorkspaceOnboardingStep[] = [
   "roles-open",
   "roles-intro",
   "roles-name",
@@ -281,10 +280,11 @@ export function deriveOnboardingStep(args: {
   return "open-add-task";
 }
 
-export function parseStoredStep(raw: string | null): WorkspaceOnboardingStep | null {
+function parseStoredStep(raw: string | null): WorkspaceOnboardingStep | null {
   if (!raw) return null;
-  return ALL_STEPS.includes(raw as WorkspaceOnboardingStep)
-    ? (raw as WorkspaceOnboardingStep)
+  const migrated = LEGACY_STEP_ALIASES[raw] ?? raw;
+  return ALL_STEPS.includes(migrated as WorkspaceOnboardingStep)
+    ? (migrated as WorkspaceOnboardingStep)
     : null;
 }
 
@@ -339,19 +339,14 @@ export function skipToNextSection(
   if (
     step === "claim-pool" ||
     step === "claim-pool-info" ||
-    step === "tags" ||
     step === "tags-info"
   ) {
-    return "one-off";
+    return "one-off-info";
   }
   if (
-    step === "one-off" ||
     step === "one-off-info" ||
-    step === "daily" ||
     step === "daily-info" ||
-    step === "weekly" ||
     step === "weekly-info" ||
-    step === "monthly" ||
     step === "monthly-info"
   ) {
     return "submit";
