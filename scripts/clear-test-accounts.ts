@@ -2,13 +2,32 @@
  * Soft-delete accounts whose username is "test" or "test" + optional
  * spaces/digits (test13, test 5, etc.). See .cursor/rules/test-account-removal.mdc.
  *
- * Usage: npx tsx scripts/clear-test-accounts.ts
+ * Targets the DB from getDatabaseUrl() (prefers rowgon_storage_* / Neon Preview).
+ * Local .env pointing at localhost will NOT see Vercel Preview accounts.
+ *
+ * Usage:
+ *   npx tsx scripts/clear-test-accounts.ts
+ *   rowgon_storage_DATABASE_URL='postgresql://…' npx tsx scripts/clear-test-accounts.ts
  */
 import "dotenv/config";
 import { prisma } from "../src/lib/db";
+import { getDatabaseUrl } from "../src/lib/db-url";
 
 /** Matches: test, test13, test 5, TEST — not testing / contest / testuser */
 const TEST_USERNAME = /^test(\s*\d+)?$/i;
+
+function dbHostLabel(url: string): string {
+  try {
+    return new URL(url).hostname;
+  } catch {
+    return "(unparseable)";
+  }
+}
+
+function isLocalDb(url: string): boolean {
+  const host = dbHostLabel(url).toLowerCase();
+  return host === "localhost" || host === "127.0.0.1" || host === "::1";
+}
 
 async function softDeleteUser(user: {
   id: string;
@@ -90,6 +109,15 @@ async function softDeleteUser(user: {
 }
 
 async function main() {
+  const url = getDatabaseUrl();
+  const host = dbHostLabel(url);
+  console.log(`Database host: ${host}`);
+  if (isLocalDb(url)) {
+    console.warn(
+      "Warning: connected to local Postgres. Vercel Preview test accounts live on Neon (rowgon_storage_*). Set that URL to clear Preview users.",
+    );
+  }
+
   const users = await prisma.user.findMany({
     where: { deletedAt: null },
     select: { id: true, username: true, email: true },
@@ -98,7 +126,9 @@ async function main() {
   const matches = users.filter((u) => TEST_USERNAME.test(u.username.trim()));
 
   if (matches.length === 0) {
-    console.log("No active test* accounts found.");
+    console.log(
+      `No active test* accounts found among ${users.length} user(s) on this database.`,
+    );
     return;
   }
 

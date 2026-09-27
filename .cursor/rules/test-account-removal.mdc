@@ -12,5 +12,6 @@ When the user says **test Removal**, **test cleanup**, or similar (clearing test
    - `test`
    - `test` + optional spaces + digits (e.g. `test13`, `test 5`, `test5`)
    - Case-insensitive: `/^test(\s*\d+)?$/i`
-3. Use `scripts/clear-test-accounts.ts` (or equivalent Prisma soft-delete matching `confirmAccountDeletionAction`): free the username, set `deletedAt` / `deletedUsername`, strip sessions/memberships/friendships as the script does.
-4. Report how many accounts were cleared and their usernames. Do not touch `demo`, `friend`, or other non-matching accounts.
+3. Target the **Vercel Preview / Neon** database (`rowgon_storage_DATABASE_URL`), not local `.env` localhost. Preview test accounts will not appear on the agent’s local Postgres.
+4. Use `scripts/clear-test-accounts.ts` (or equivalent Prisma soft-delete matching `confirmAccountDeletionAction`): free the username, set `deletedAt` / `deletedUsername`, strip sessions/memberships/friendships as the script does.
+5. Report how many accounts were cleared, their usernames, and which DB host was used. Do not touch `demo`, `friend`, or other non-matching accounts.
