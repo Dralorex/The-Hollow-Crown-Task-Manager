@@ -18,6 +18,7 @@ export function DueDateField({
   blink = false,
   blinkReset = false,
   blinkClear = false,
+  onFieldActivate,
   onValueChange,
   onReset,
   onClear,
@@ -28,6 +29,7 @@ export function DueDateField({
   blink?: boolean;
   blinkReset?: boolean;
   blinkClear?: boolean;
+  onFieldActivate?: () => void;
   /** Fires when the user picks/clears a date (not merely on focus). */
   onValueChange?: (value: string) => void;
   onReset?: () => void;
@@ -43,6 +45,7 @@ export function DueDateField({
   }, [defaultValue]);
 
   function openPicker() {
+    onFieldActivate?.();
     const el = ref.current;
     if (!el) return;
     el.focus();
@@ -86,6 +89,7 @@ export function DueDateField({
           }}
           onFocus={() => {
             setFocused(true);
+            onFieldActivate?.();
           }}
           onBlur={() => setFocused(false)}
           onClick={(e) => {

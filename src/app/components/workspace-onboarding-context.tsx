@@ -122,7 +122,17 @@ export function WorkspaceOnboardingProvider({
         }
         return "create-folder";
       }
-      if (!inFolder) return "open-folder";
+      if (!inFolder) {
+        if (
+          isRoleCreateStep(prev) ||
+          isFolderCreateStep(prev) ||
+          prev === "open-folder" ||
+          prev === "done"
+        ) {
+          return "open-folder";
+        }
+        return "open-folder";
+      }
       if (
         isRoleCreateStep(prev) ||
         isFolderCreateStep(prev) ||
@@ -237,12 +247,12 @@ export function WorkspaceOnboardingProvider({
   const track: OnboardingTrack | null =
     pref.status === "full" || pref.status === "short" ? pref.status : null;
 
-  // forceShow (?setup=1) can re-open the chooser even after a task exists.
   const needsChooser =
     ready &&
     canEdit &&
     pref.status === "unset" &&
-    (!hasTask || forceShow);
+    !hasTask &&
+    (forceShow || !hasFolder || !hasTask);
 
   /** Tips that still show after the first task exists (blink off). */
   const postTaskStep = step === "task-menu-info";
@@ -307,11 +317,11 @@ export function WorkspaceOnboardingProvider({
         "due-clear": ["due-clear"],
         // due-reset-info: no blink — explanation prompt only
         "claim-pool": ["claim-pool"],
-        tags: ["tags-info"],
-        "one-off": ["one-off-info"],
-        daily: ["daily-info"],
-        weekly: ["weekly-info"],
-        monthly: ["monthly-info"],
+        tags: ["tags", "tags-info"],
+        "one-off": ["one-off", "one-off-info"],
+        daily: ["daily", "daily-info"],
+        weekly: ["weekly", "weekly-info"],
+        monthly: ["monthly", "monthly-info"],
         submit: ["submit"],
         "task-menu": ["task-menu-info"],
       };

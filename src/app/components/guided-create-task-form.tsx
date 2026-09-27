@@ -3,10 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { InlineActionForm } from "@/app/components/forms";
 import { DueDateField } from "@/app/components/due-date-field";
-import {
-  OnboardingPrompt,
-  blinkRing,
-} from "@/app/components/onboarding-prompt";
+import { OnboardingPrompt } from "@/app/components/onboarding-prompt";
 import { TagSuggestInput } from "@/app/components/tag-suggest-input";
 import { useWorkspaceOnboarding } from "@/app/components/workspace-onboarding-context";
 import { createTaskAction } from "@/app/actions/tasks";
@@ -27,6 +24,12 @@ const WEEKDAYS = [
 ];
 
 type Assignable = { id: string; username: string };
+
+function blinkClass(on: boolean) {
+  return on
+    ? "animate-rowgon-blink-empty ring-2 ring-inset ring-[#3b82f6]/55"
+    : "";
+}
 
 /**
  * Create-task form with optional guided onboarding blinks + coach prompts.
@@ -79,9 +82,36 @@ export function GuidedCreateTaskForm({
     setFormEpoch((n) => n + 1);
   }, []);
 
-  /** Keep cadence chips in sync with the active info step. */
+  /** Normalize vestigial chip/gate steps onto their info prompts. */
   useEffect(() => {
     if (!active) return;
+
+    if (step === "tags") {
+      setStep("tags-info");
+      return;
+    }
+    if (step === "one-off") {
+      setCadence("");
+      setStep("one-off-info");
+      return;
+    }
+    if (step === "daily") {
+      setCadence("daily");
+      setWeekDays([0, 1, 2, 3, 4, 5, 6]);
+      setStep("daily-info");
+      return;
+    }
+    if (step === "weekly") {
+      setCadence("weekly");
+      setStep("weekly-info");
+      return;
+    }
+    if (step === "monthly") {
+      setCadence("monthly");
+      setStep("monthly-info");
+      return;
+    }
+
     if (step === "one-off-info") setCadence("");
     if (step === "daily-info") {
       setCadence("daily");
@@ -89,7 +119,7 @@ export function GuidedCreateTaskForm({
     }
     if (step === "weekly-info") setCadence("weekly");
     if (step === "monthly-info") setCadence("monthly");
-  }, [active, step]);
+  }, [active, step, setStep]);
 
   function toggleWeek(day: number) {
     setWeekDays((prev) =>
@@ -136,7 +166,7 @@ export function GuidedCreateTaskForm({
         className="grid min-w-0 gap-2 sm:grid-cols-2"
         action={createTaskAction}
         submitLabel="Add Task"
-        submitClassName={blinkRing(blink("submit"))}
+        submitClassName={blinkClass(blink("submit"))}
         onSuccess={resetForm}
       >
         <input type="hidden" name="workspaceId" value={workspaceId} />
@@ -150,7 +180,7 @@ export function GuidedCreateTaskForm({
           data-onboarding="task-name"
           required
           placeholder="Task Name"
-          className={`rowgon-input ${blinkRing(showNameBlink)}`}
+          className={`rowgon-input ${blinkClass(showNameBlink)}`}
           value={taskName}
           onFocus={() => setNameClicked(true)}
           onClick={() => setNameClicked(true)}
@@ -168,7 +198,7 @@ export function GuidedCreateTaskForm({
           required
           value={priority}
           aria-label="Priority Level"
-          className={`rowgon-input ${!priority ? "rowgon-input-hint" : ""} ${blinkRing(blink("priority"))}`}
+          className={`rowgon-input ${!priority ? "rowgon-input-hint" : ""} ${blinkClass(blink("priority"))}`}
           onChange={(e) => {
             setPriority(e.target.value);
             if (active && step === "priority" && e.target.value) {
@@ -194,7 +224,7 @@ export function GuidedCreateTaskForm({
           name="description"
           data-onboarding="description"
           placeholder="Description"
-          className={`rowgon-input sm:col-span-2 ${blinkRing(showDescBlink)}`}
+          className={`rowgon-input sm:col-span-2 ${blinkClass(showDescBlink)}`}
           value={description}
           onFocus={() => setDescClicked(true)}
           onClick={() => setDescClicked(true)}
@@ -245,7 +275,7 @@ export function GuidedCreateTaskForm({
         <select
           name="assignTo"
           aria-label="Manual Assign (optional)"
-          className={`rowgon-input ${!assignTo ? "rowgon-input-hint" : ""} ${blinkRing(blink("claim-pool"))}`}
+          className={`rowgon-input ${!assignTo ? "rowgon-input-hint" : ""} ${blinkClass(blink("claim-pool"))}`}
           value={assignTo}
           onChange={(e) => {
             setAssignTo(e.target.value);
@@ -276,11 +306,11 @@ export function GuidedCreateTaskForm({
             keepOpenOnPick
             commitTagOnEnter
             dataOnboarding="tags"
-            inputClassName={`rowgon-input text-sm ${blinkRing(blink("tags"))}`}
+            inputClassName={`rowgon-input text-sm ${blinkClass(blink("tags"))}`}
             onCommittedTagsChange={(list) => {
               if (!active) return;
               if (
-                step === "tags-info" &&
+                (step === "tags" || step === "tags-info") &&
                 list.length > 0
               ) {
                 setStep("one-off-info");
@@ -308,7 +338,7 @@ export function GuidedCreateTaskForm({
                   cadence === value
                     ? "bg-[#0A3D45] text-[#E8F7F6]"
                     : "bg-white/70 text-[#0A3D45]/70"
-                } ${blinkRing(blink(key))}`}
+                } ${blinkClass(blink(key))}`}
               >
                 {label}
               </button>
@@ -513,12 +543,15 @@ export function GuidedCreateTaskForm({
           onNext={() => setStep("claim-pool")}
         />
       ) : null}
-      {active && step === "tags-info" ? (
+      {active && (step === "tags" || step === "tags-info") ? (
         <OnboardingPrompt
           title="Tags"
           body="Type a tag and pick a suggestion (or finish typing and leave the field) to add a chip. The tip moves on once a tag is added. Later, use the Tag filter in search to find matching tasks."
           actionLabel="Add Tag"
-          onAction={() => focusOnboardingStep("tags-info")}
+          onAction={() => {
+            focusOnboardingStep("tags");
+            if (step === "tags") setStep("tags-info");
+          }}
           onNext={() => setStep("one-off-info")}
         />
       ) : null}

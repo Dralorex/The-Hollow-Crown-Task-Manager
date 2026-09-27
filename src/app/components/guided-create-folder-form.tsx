@@ -2,15 +2,18 @@
 
 import { useEffect, useState } from "react";
 import { InlineActionForm } from "@/app/components/forms";
-import {
-  OnboardingPrompt,
-  blinkRing,
-} from "@/app/components/onboarding-prompt";
+import { OnboardingPrompt } from "@/app/components/onboarding-prompt";
 import { TagSuggestInput } from "@/app/components/tag-suggest-input";
 import { useWorkspaceOnboarding } from "@/app/components/workspace-onboarding-context";
 import { createFolderAction } from "@/app/actions/tasks";
 import { focusOnboardingStep } from "@/lib/onboarding-targets";
 import { nextFolderCreateStep } from "@/lib/workspace-onboarding";
+
+function blinkClass(on: boolean) {
+  return on
+    ? "animate-rowgon-blink-empty ring-2 ring-inset ring-[#3b82f6]/55"
+    : "";
+}
 
 /** Remount when blink ends so Safari can’t leave a frozen blue fill. */
 function blinkKey(on: boolean, id: string) {
@@ -65,7 +68,7 @@ export function GuidedCreateFolderForm({
       className="flex flex-col gap-2"
       action={createFolderAction}
       submitLabel="Add folder"
-      submitClassName={blinkRing(blink("folder-submit"))}
+      submitClassName={blinkClass(blink("folder-submit"))}
     >
       <input type="hidden" name="workspaceId" value={workspaceId} />
       {parentId ? <input type="hidden" name="parentId" value={parentId} /> : null}
@@ -78,7 +81,7 @@ export function GuidedCreateFolderForm({
         data-onboarding="folder-name"
         required
         placeholder="Folder Name"
-        className={`rowgon-input text-sm ${blinkRing(showNameBlink)}`}
+        className={`rowgon-input text-sm ${blinkClass(showNameBlink)}`}
         value={name}
         onFocus={() => setNameClicked(true)}
         onClick={() => setNameClicked(true)}
@@ -105,7 +108,7 @@ export function GuidedCreateFolderForm({
             allowMultiple
             keepOpenOnPick
             dataOnboarding="folder-roles"
-            inputClassName={`rowgon-input text-sm ${blinkRing(blink("folder-roles"))}`}
+            inputClassName={`rowgon-input text-sm ${blinkClass(blink("folder-roles"))}`}
             emptyMessage={
               roleNames.length === 0
                 ? "No roles yet — create one in Roles first"
@@ -225,6 +228,9 @@ export function GuidedCreateFolderForm({
             </span>
           </label>
         </>
+      ) : canSetAccess ? (
+        // Short track: still submit roles fields as empty / unused
+        null
       ) : null}
     </InlineActionForm>
 

@@ -248,6 +248,8 @@ export function WorkspaceSetupChecklist({
         />
       ) : null}
 
+      {/* folder-roles tip lives on GuidedCreateFolderForm (hide on focus, advance on leave). */}
+
       {step === "folder-hide" ? (
         <OnboardingPrompt
           title="Hide from unauthorized"

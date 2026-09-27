@@ -16,7 +16,7 @@ function isVisible(el: HTMLElement): boolean {
 }
 
 /** Move focus to the next focusable control in the form (Enter-as-Tab). */
-function focusNextFormControl(
+export function focusNextFormControl(
   form: HTMLFormElement,
   current: Element,
 ): void {
