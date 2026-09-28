@@ -39,6 +39,7 @@ import {
 
 type Scope = "personal" | "workspace";
 type View = "list" | "month";
+export type CalendarKind = "personal" | "task" | "workspace" | "birthday";
 type EventAction = (
   previous: ActionResult | null,
   formData: FormData,
@@ -47,7 +48,7 @@ type EventAction = (
 export type CalendarBoardEvent = {
   id: string;
   recordId: string;
-  kind: "personal" | "workspace" | "task" | "birthday";
+  kind: CalendarKind;
   title: string;
   description: string;
   date: string;
@@ -58,6 +59,53 @@ export type CalendarBoardEvent = {
   href?: string;
   canMove?: boolean;
 };
+
+const KIND_META: Record<
+  CalendarKind,
+  { label: string; chip: string; bar: string }
+> = {
+  personal: {
+    label: "Personal",
+    chip: "bg-[#3DBEAB]/20 text-[#0A3D45]",
+    bar: "bg-[#3DBEAB]",
+  },
+  task: {
+    label: "Task",
+    chip: "bg-[#E85D4C]/18 text-[#9b2f22]",
+    bar: "bg-[#E85D4C]",
+  },
+  workspace: {
+    label: "Workspace",
+    chip: "bg-[#0A3D45]/12 text-[#0A3D45]",
+    bar: "bg-[#0A3D45]",
+  },
+  birthday: {
+    label: "Birthday",
+    chip: "bg-[#e0b56a]/35 text-[#6b4a12]",
+    bar: "bg-[#e0b56a]",
+  },
+};
+
+const ALL_KINDS: CalendarKind[] = ["personal", "task", "workspace", "birthday"];
+
+function toggleKind(current: CalendarKind[], kind: CalendarKind) {
+  if (current.includes(kind)) {
+    const next = current.filter((k) => k !== kind);
+    // Keep at least one kind visible so the calendar never goes blank by accident.
+    return next.length > 0 ? next : current;
+  }
+  return [...current, kind];
+}
+
+function parseActiveKinds(raw: string | null): CalendarKind[] {
+  if (!raw) return [...ALL_KINDS];
+  const parsed = raw
+    .split(",")
+    .filter((k): k is CalendarKind =>
+      (ALL_KINDS as string[]).includes(k),
+    );
+  return parsed.length > 0 ? parsed : [...ALL_KINDS];
+}
 
 type CalendarWorkspace = {
   id: string;
@@ -404,13 +452,19 @@ function EventRow({
     event.kind === "personal" ||
     (event.kind === "workspace" && canEditWorkspace);
 
+  const meta = KIND_META[event.kind];
+
   return (
     <li
       id={`calendar-event-${event.id}`}
-      className={`tide-panel calendar-event-row overflow-hidden transition ${
+      className={`tide-panel calendar-event-row relative overflow-hidden pl-1 transition ${
         focused ? "ring-2 ring-[#3DBEAB]/60" : ""
       }`}
     >
+      <span
+        className={`absolute inset-y-0 left-0 w-1 ${meta.bar}`}
+        aria-hidden
+      />
       <button
         type="button"
         onClick={onToggle}
@@ -433,8 +487,10 @@ function EventRow({
             {eventWhen(event)}
           </span>
         </span>
-        <span className="hidden rounded-md bg-[#0A3D45]/8 px-2 py-1 text-[10px] font-semibold uppercase tracking-wide text-[#0A3D45]/65 sm:inline">
-          {event.kind}
+        <span
+          className={`hidden rounded-md px-2 py-1 text-[10px] font-semibold uppercase tracking-wide sm:inline ${meta.chip}`}
+        >
+          {meta.label}
         </span>
       </button>
 
@@ -570,6 +626,11 @@ export function CalendarBoard({
   const [dragError, setDragError] = useState<string | null>(null);
   const [dndPending, startDndTransition] = useTransition();
 
+  const activeKinds = useMemo(
+    () => parseActiveKinds(searchParams.get("kinds")),
+    [searchParams],
+  );
+
   const eventsKey = events.map((e) => `${e.id}:${e.date}`).join("|");
   useEffect(() => {
     setLocalEvents(events);
@@ -588,14 +649,19 @@ export function CalendarBoard({
       ?.scrollIntoView({ behavior: "smooth", block: "center" });
   }, [expandedId, activeView]);
 
+  const visibleEvents = useMemo(
+    () => localEvents.filter((event) => activeKinds.includes(event.kind)),
+    [localEvents, activeKinds],
+  );
+
   const eventsByDay = useMemo(() => {
     const grouped = new Map<string, CalendarBoardEvent[]>();
-    for (const event of localEvents) {
+    for (const event of visibleEvents) {
       const key = eventDateKey(event);
       grouped.set(key, [...(grouped.get(key) ?? []), event]);
     }
     return grouped;
-  }, [localEvents]);
+  }, [visibleEvents]);
 
   function moveEvent(eventId: string, toDay: string) {
     const event = localEvents.find((e) => e.id === eventId);
@@ -695,6 +761,7 @@ export function CalendarBoard({
       view: View;
       workspaceId: string;
       workspaceIds: string[];
+      kinds: CalendarKind[] | null;
     }>,
   ) {
     const next = new URLSearchParams(searchParams.toString());
@@ -706,6 +773,16 @@ export function CalendarBoard({
       }
     }
     if (values.view) next.set("view", values.view);
+    if (values.kinds !== undefined) {
+      if (
+        values.kinds === null ||
+        values.kinds.length === ALL_KINDS.length
+      ) {
+        next.delete("kinds");
+      } else {
+        next.set("kinds", values.kinds.join(","));
+      }
+    }
     if (values.workspaceIds) {
       next.set("scope", "workspace");
       next.delete("workspaceId");
@@ -726,6 +803,10 @@ export function CalendarBoard({
         ?? (next.get("workspaceIds")?.split(",").filter(Boolean) ?? undefined),
     });
     router.push(`${pathname}?${next.toString()}`);
+  }
+
+  function toggleKindFilter(kind: CalendarKind) {
+    updateUrl({ kinds: toggleKind(activeKinds, kind) });
   }
 
   function chooseView(view: View) {
@@ -789,7 +870,39 @@ export function CalendarBoard({
         </div>
       </div>
 
-      <div className="mt-6 flex flex-wrap items-center gap-3">
+      <div className="mt-6 flex flex-wrap gap-2" role="group" aria-label="Event kinds">
+        {ALL_KINDS.map((kind) => {
+          const on = activeKinds.includes(kind);
+          const meta = KIND_META[kind];
+          return (
+            <button
+              key={kind}
+              type="button"
+              onClick={() => toggleKindFilter(kind)}
+              aria-pressed={on}
+              title={
+                on
+                  ? `Hide ${meta.label.toLowerCase()} events`
+                  : `Show ${meta.label.toLowerCase()} events`
+              }
+              className={`inline-flex min-h-10 items-center gap-2 rounded-full px-3 text-sm font-semibold transition ${
+                on
+                  ? "bg-[#0A3D45] text-[#E8F7F6]"
+                  : "bg-white/55 text-[#0A3D45]/55 hover:bg-white/80"
+              }`}
+            >
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${meta.bar} ${
+                  on ? "" : "opacity-40"
+                }`}
+              />
+              {meta.label}
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="mt-4 flex flex-wrap items-center gap-3">
         <div className="flex rounded-full border border-[#0A3D45]/15 bg-white/50 p-1">
           <button
             type="button"
@@ -995,28 +1108,34 @@ export function CalendarBoard({
                     {format(day, "d")}
                   </span>
                   <span className="mt-1 block space-y-1">
-                    {dayEvents.slice(0, 3).map((event) => (
-                      <span
-                        key={event.id}
-                        draggable={Boolean(event.canMove)}
-                        onDragStart={(e) => {
-                          if (!event.canMove) return;
-                          e.stopPropagation();
-                          e.dataTransfer.setData("text/calendar-event", event.id);
-                          e.dataTransfer.effectAllowed = "move";
-                        }}
-                        className={`calendar-event-chip block truncate rounded bg-[#0A3D45]/10 px-1.5 py-1 text-[10px] font-medium text-[#0A3D45] ${
-                          event.canMove
-                            ? "cursor-grab active:cursor-grabbing"
-                            : ""
-                        }`}
-                        title={
-                          event.canMove ? `${event.title} · drag to move` : event.title
-                        }
-                      >
-                        {event.title}
-                      </span>
-                    ))}
+                    {dayEvents.slice(0, 3).map((event) => {
+                      const meta = KIND_META[event.kind];
+                      return (
+                        <span
+                          key={event.id}
+                          draggable={Boolean(event.canMove)}
+                          onDragStart={(e) => {
+                            if (!event.canMove) return;
+                            e.stopPropagation();
+                            e.dataTransfer.setData(
+                              "text/calendar-event",
+                              event.id,
+                            );
+                            e.dataTransfer.effectAllowed = "move";
+                          }}
+                          className={`calendar-event-chip block truncate rounded px-1.5 py-1 text-[10px] font-semibold leading-tight ${meta.chip} ${
+                            event.canMove
+                              ? "cursor-grab active:cursor-grabbing"
+                              : ""
+                          }`}
+                          title={`${meta.label} · ${event.sourceLabel} · ${event.title}${
+                            event.canMove ? " · drag to move" : ""
+                          }`}
+                        >
+                          {event.title}
+                        </span>
+                      );
+                    })}
                     {dayEvents.length > 3 ? (
                       <span className="block text-[10px] text-[#0A3D45]/55">
                         +{dayEvents.length - 3} more
@@ -1038,10 +1157,14 @@ export function CalendarBoard({
                 : selectedWorkspace?.name ?? "Workspace events"}
           </h2>
           <ul className="mt-4 space-y-3">
-            {events.length === 0 ? (
-              <li className="text-[#0A3D45]/60">Nothing on the tide chart yet.</li>
+            {visibleEvents.length === 0 ? (
+              <li className="text-[#0A3D45]/60">
+                {localEvents.length === 0
+                  ? "Nothing on the tide chart yet."
+                  : "Nothing in the selected kinds yet."}
+              </li>
             ) : (
-              events.map((event) => (
+              visibleEvents.map((event) => (
                 <EventRow
                   key={event.id}
                   event={event}
