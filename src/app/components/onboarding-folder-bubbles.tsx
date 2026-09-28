@@ -21,6 +21,9 @@ type BubbleFolder = {
     requiredRoleIds: string[];
     hideFromUnauthorized?: boolean;
     alwaysVisible?: boolean;
+    alwaysAccessible?: boolean;
+    moveOptions?: { id: string | null; label: string }[];
+    currentParentId?: string | null;
   };
 };
 

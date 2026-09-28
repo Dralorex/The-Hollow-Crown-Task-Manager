@@ -11,6 +11,9 @@ type FolderActionsProps = {
   requiredRoleIds: string[];
   hideFromUnauthorized?: boolean;
   alwaysVisible?: boolean;
+  alwaysAccessible?: boolean;
+  moveOptions?: { id: string | null; label: string }[];
+  currentParentId?: string | null;
 };
 
 /** Folder card where empty space opens the folder; actions stay clickable. */

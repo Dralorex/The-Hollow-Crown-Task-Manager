@@ -189,6 +189,174 @@ export async function renameFolderAction(
   return { ok: true };
 }
 
+/** Nest a folder under another folder (or workspace root). */
+export async function moveFolderAction(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const user = await requireUser();
+  const workspaceId = String(formData.get("workspaceId") ?? "");
+  const folderId = String(formData.get("folderId") ?? "");
+  const parentRaw = String(formData.get("parentId") ?? "").trim();
+  const newParentId = parentRaw || null;
+
+  const membership = await requireMembership(workspaceId, user.id);
+  if (!canEditContent(membership.role)) {
+    return { ok: false, error: "Members can’t move folders." };
+  }
+
+  const workspace = await prisma.workspace.findUniqueOrThrow({
+    where: { id: workspaceId },
+  });
+  if (isArchived(workspace)) {
+    return {
+      ok: false,
+      error: "This workspace is archived. Restore it to move folders.",
+    };
+  }
+
+  const folder = await prisma.folder.findFirst({
+    where: { id: folderId, workspaceId },
+  });
+  if (!folder) return { ok: false, error: "Folder not found." };
+  if (isArchived(folder)) {
+    return { ok: false, error: "That folder is archived. Restore it first." };
+  }
+
+  const sourceDenied = await requireTaskFolderAccess(
+    workspaceId,
+    membership.id,
+    folderId,
+    membership.role,
+  );
+  if (sourceDenied) return sourceDenied;
+
+  if (newParentId === folderId) {
+    return { ok: false, error: "A folder can’t nest inside itself." };
+  }
+
+  if (newParentId) {
+    const parent = await prisma.folder.findFirst({
+      where: { id: newParentId, workspaceId },
+    });
+    if (!parent) return { ok: false, error: "Destination folder not found." };
+    if (isArchived(parent)) {
+      return {
+        ok: false,
+        error: "That destination is archived. Restore it first.",
+      };
+    }
+    const destDenied = await requireTaskFolderAccess(
+      workspaceId,
+      membership.id,
+      newParentId,
+      membership.role,
+    );
+    if (destDenied) return destDenied;
+
+    const descendants = await collectFolderDescendantIds(workspaceId, folderId);
+    if (descendants.includes(newParentId)) {
+      return {
+        ok: false,
+        error: "Can’t move a folder into one of its subfolders.",
+      };
+    }
+  }
+
+  if (folder.parentId === newParentId) {
+    return { ok: true };
+  }
+
+  await prisma.folder.update({
+    where: { id: folderId },
+    data: { parentId: newParentId },
+  });
+
+  revalidatePath(`/app/w/${workspaceId}`);
+  revalidatePath("/app", "layout");
+  return { ok: true };
+}
+
+/** Move a task into a different folder in the same workspace. */
+export async function moveTaskToFolderAction(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const user = await requireUser();
+  const workspaceId = String(formData.get("workspaceId") ?? "");
+  const taskId = String(formData.get("taskId") ?? "");
+  const folderId = String(formData.get("folderId") ?? "").trim();
+
+  const membership = await requireMembership(workspaceId, user.id);
+  if (!canEditContent(membership.role)) {
+    return { ok: false, error: "Members can’t move tasks." };
+  }
+
+  if (!folderId) return { ok: false, error: "Pick a destination folder." };
+
+  const workspace = await prisma.workspace.findUniqueOrThrow({
+    where: { id: workspaceId },
+  });
+  if (isArchived(workspace)) {
+    return {
+      ok: false,
+      error: "This workspace is archived. Restore it to move tasks.",
+    };
+  }
+
+  const task = await prisma.task.findFirst({
+    where: { id: taskId, workspaceId },
+  });
+  if (!task) return { ok: false, error: "Task not found." };
+
+  const sourceDenied = await requireTaskFolderAccess(
+    workspaceId,
+    membership.id,
+    task.folderId,
+    membership.role,
+  );
+  if (sourceDenied) return sourceDenied;
+
+  const dest = await prisma.folder.findFirst({
+    where: { id: folderId, workspaceId },
+  });
+  if (!dest) return { ok: false, error: "Destination folder not found." };
+  if (isArchived(dest)) {
+    return {
+      ok: false,
+      error: "That folder is archived. Restore it first.",
+    };
+  }
+
+  const destDenied = await requireTaskFolderAccess(
+    workspaceId,
+    membership.id,
+    folderId,
+    membership.role,
+  );
+  if (destDenied) return destDenied;
+
+  if (task.folderId === folderId) {
+    return { ok: true };
+  }
+
+  await prisma.task.update({
+    where: { id: taskId },
+    data: { folderId },
+  });
+
+  await recordTaskActivity({
+    taskId,
+    actorId: user.id,
+    type: "moved",
+    message: `${personLabel(user)} moved this task to “${dest.name}”`,
+  });
+
+  revalidatePath(`/app/w/${workspaceId}`);
+  revalidatePath("/app", "layout");
+  return { ok: true };
+}
+
 export async function deleteFolderAction(
   _prev: ActionResult | null,
   formData: FormData,

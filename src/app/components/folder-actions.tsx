@@ -4,11 +4,13 @@ import { useEffect, useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import {
   deleteFolderAction,
+  moveFolderAction,
   renameFolderAction,
 } from "@/app/actions/tasks";
 import { setFolderRolesAction } from "@/app/actions/roles";
 import { confirmDelete } from "@/lib/confirm";
 import { MenuSurface, menuItemClass } from "@/app/components/menu-surface";
+import type { FolderMoveOption } from "@/lib/folder-tree";
 
 type RoleOption = { id: string; name: string };
 
@@ -22,6 +24,8 @@ export function FolderActions({
   hideFromUnauthorized = false,
   alwaysVisible = false,
   alwaysAccessible = false,
+  moveOptions = [],
+  currentParentId = null,
 }: {
   workspaceId: string;
   folderId: string;
@@ -32,11 +36,17 @@ export function FolderActions({
   hideFromUnauthorized?: boolean;
   alwaysVisible?: boolean;
   alwaysAccessible?: boolean;
+  /** Nest destinations (self + descendants already excluded). */
+  moveOptions?: FolderMoveOption[];
+  currentParentId?: string | null;
 }) {
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
-  const [panel, setPanel] = useState<"menu" | "access">("menu");
+  const [panel, setPanel] = useState<"menu" | "access" | "move">("menu");
   const [name, setName] = useState(folderName);
+  const [moveParentId, setMoveParentId] = useState<string>(
+    currentParentId ?? "",
+  );
   const [selected, setSelected] = useState<Set<string>>(
     () => new Set(requiredRoleIds),
   );
@@ -53,6 +63,10 @@ export function FolderActions({
   useEffect(() => {
     setName(folderName);
   }, [folderName]);
+
+  useEffect(() => {
+    setMoveParentId(currentParentId ?? "");
+  }, [currentParentId]);
 
   useEffect(() => {
     setSelected(new Set(requiredRoleIds));
@@ -122,11 +136,29 @@ export function FolderActions({
     setOpen(false);
     setPanel("menu");
     setError(null);
+    setMoveParentId(currentParentId ?? "");
     setSelected(new Set(requiredRoleIds));
     setAccessMode(requiredRoleIds.length === 0 ? "all" : "roles");
     setHideUnauthorized(hideFromUnauthorized);
     setAlwaysShow(alwaysVisible);
     setAlwaysAccess(alwaysAccessible);
+  }
+
+  function saveMove() {
+    setError(null);
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set("workspaceId", workspaceId);
+      fd.set("folderId", folderId);
+      fd.set("parentId", moveParentId);
+      const result = await moveFolderAction(null, fd);
+      if (result && !result.ok) {
+        setError(result.error);
+        return;
+      }
+      close();
+      router.refresh();
+    });
   }
 
   return (
@@ -167,7 +199,11 @@ export function FolderActions({
         <MenuSurface
           open={open}
           onClose={close}
-          widthClass={panel === "access" ? "min-w-[16rem]" : "min-w-[10rem]"}
+          widthClass={
+            panel === "access" || panel === "move"
+              ? "min-w-[16rem]"
+              : "min-w-[10rem]"
+          }
           trigger={({ ref }) => (
             <button
               ref={ref}
@@ -198,6 +234,19 @@ export function FolderActions({
               >
                 Rename
               </button>
+              {moveOptions.length > 0 ? (
+                <button
+                  type="button"
+                  role="menuitem"
+                  className={menuItemClass()}
+                  onClick={() => {
+                    setMoveParentId(currentParentId ?? "");
+                    setPanel("move");
+                  }}
+                >
+                  Move…
+                </button>
+              ) : null}
               {canManageRoles ? (
                 <button
                   type="button"
@@ -217,7 +266,52 @@ export function FolderActions({
                 Delete
               </button>
             </>
-          ) : (
+          ) : null}
+
+          {panel === "move" ? (
+            <div className="max-h-80 space-y-2 overflow-y-auto px-3 py-2">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--tide-deep)]/45">
+                Nest “{folderName}” under
+              </p>
+              <select
+                value={moveParentId}
+                onChange={(e) => setMoveParentId(e.target.value)}
+                className="tide-input w-full text-sm"
+                aria-label="Destination folder"
+              >
+                {moveOptions.map((opt) => (
+                  <option key={opt.id ?? "__root__"} value={opt.id ?? ""}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+              {error ? (
+                <p className="text-xs text-[color:var(--tide-coral)]">{error}</p>
+              ) : null}
+              <div className="flex gap-2 pt-1">
+                <button
+                  type="button"
+                  disabled={pending}
+                  className="tide-btn-secondary !px-2.5 !py-1 text-xs disabled:opacity-50"
+                  onClick={saveMove}
+                >
+                  {pending ? "Moving…" : "Move"}
+                </button>
+                <button
+                  type="button"
+                  className="text-xs text-[color:var(--tide-deep)]/55"
+                  onClick={() => {
+                    setError(null);
+                    setPanel("menu");
+                  }}
+                >
+                  Back
+                </button>
+              </div>
+            </div>
+          ) : null}
+
+          {panel === "access" ? (
             <div className="max-h-80 space-y-2 overflow-y-auto px-3 py-2">
               <p className="text-[11px] font-semibold uppercase tracking-wide text-[color:var(--tide-deep)]/45">
                 Who can open “{folderName}”
@@ -338,7 +432,7 @@ export function FolderActions({
                 </button>
               </div>
             </div>
-          )}
+          ) : null}
         </MenuSurface>
       )}
     </div>

@@ -40,6 +40,10 @@ import {
   ArchiveWorkspacePanel,
 } from "@/app/components/archive-controls";
 import { canViewArchived, isArchived } from "@/lib/archive";
+import {
+  buildNestedFolderOptions,
+  collectDescendantIds,
+} from "@/lib/folder-tree";
 import { syncDueRecurrences } from "@/lib/recurrence";
 
 const taskInclude = {
@@ -512,8 +516,19 @@ export default async function WorkspacePage({
   const templateParentFolder =
     currentFolder && !isArchived(currentFolder) ? currentFolder : null;
 
+  const moveableFolders = activeFolders.map((f) => ({
+    id: f.id,
+    name: f.name,
+    parentId: f.parentId,
+  }));
+
+  const taskMoveOptions = buildNestedFolderOptions(moveableFolders, {
+    includeRoot: false,
+  });
+
   function folderActionsProps(folderId: string, folderName: string) {
     const row = foldersById.get(folderId);
+    const exclude = collectDescendantIds(moveableFolders, folderId);
     return {
       workspaceId,
       folderId,
@@ -524,6 +539,11 @@ export default async function WorkspacePage({
       hideFromUnauthorized: row?.hideFromUnauthorized ?? false,
       alwaysVisible: row?.alwaysVisible ?? false,
       alwaysAccessible: row?.alwaysAccessible ?? false,
+      currentParentId: row?.parentId ?? null,
+      moveOptions: buildNestedFolderOptions(moveableFolders, {
+        excludeIds: exclude,
+        includeRoot: true,
+      }),
     };
   }
 
@@ -855,6 +875,7 @@ export default async function WorkspacePage({
               privateTagOptions={privateTagOptions}
               urgencyChips={urgencyChips}
               assignableMembers={assignableMembers}
+              moveOptions={taskMoveOptions}
               emptyMessage={emptyMessage}
             />
           </section>
