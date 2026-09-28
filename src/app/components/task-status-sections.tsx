@@ -8,7 +8,7 @@ import {
 import type { UrgencyChipPrefs } from "@/app/components/task-ui";
 import type { TaskStatus } from "@/generated/prisma/client";
 
-type SectionId = "unclaimed" | "claimed" | "completed";
+type SectionId = "unclaimed" | "claimed" | "under_review" | "completed";
 
 const SECTIONS: {
   id: SectionId;
@@ -16,6 +16,7 @@ const SECTIONS: {
 }[] = [
   { id: "unclaimed", title: "Unclaimed" },
   { id: "claimed", title: "Claimed" },
+  { id: "under_review", title: "Under Review" },
   { id: "completed", title: "Completed" },
 ];
 
@@ -24,7 +25,7 @@ function sectionForTask(task: {
   assigneeId: string | null;
 }): SectionId {
   if (task.status === "DONE") return "completed";
-  if (task.status === "IN_REVIEW") return "claimed";
+  if (task.status === "IN_REVIEW") return "under_review";
   if (task.status === "CLAIMED" && task.assigneeId) return "claimed";
   return "unclaimed";
 }
@@ -71,6 +72,7 @@ export function TaskStatusSections({
   workspaceId,
   userId,
   canEdit,
+  isRoot = false,
   tasks,
   publicTagOptions = [],
   privateTagOptions = [],
@@ -79,6 +81,8 @@ export function TaskStatusSections({
   workspaceId: string;
   userId: string;
   canEdit: boolean;
+  /** When true (All Tasks), rows show the task’s folder path. */
+  isRoot?: boolean;
   tasks: WorkspaceTaskData[];
   publicTagOptions?: string[];
   privateTagOptions?: string[];
@@ -87,6 +91,7 @@ export function TaskStatusSections({
   const grouped: Record<SectionId, WorkspaceTaskData[]> = {
     unclaimed: [],
     claimed: [],
+    under_review: [],
     completed: [],
   };
 
@@ -96,7 +101,9 @@ export function TaskStatusSections({
 
   if (tasks.length === 0) {
     return (
-      <p className="text-sm text-[#0A3D45]/60">No tasks here yet.</p>
+      <p className="text-sm text-[#0A3D45]/60">
+        {isRoot ? "No tasks in this workspace yet." : "No tasks here yet."}
+      </p>
     );
   }
 
@@ -120,7 +127,7 @@ export function TaskStatusSections({
                   workspaceId={workspaceId}
                   userId={userId}
                   canEdit={canEdit}
-                  isRoot={false}
+                  isRoot={isRoot}
                   task={task}
                   publicTagOptions={publicTagOptions}
                   privateTagOptions={privateTagOptions}
