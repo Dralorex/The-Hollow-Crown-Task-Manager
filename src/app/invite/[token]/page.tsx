@@ -20,8 +20,8 @@ export default async function InvitePage({
 
   if (!invite || invite.status !== "PENDING") {
     return (
-      <main className="tide-wave-bg flex min-h-screen items-center justify-center px-4">
-        <div className="tide-panel max-w-md p-8 text-center">
+      <main className="rowgon-wave-bg flex min-h-screen items-center justify-center px-4">
+        <div className="rowgon-panel max-w-md p-8 text-center">
           <p>This invite isn’t available.</p>
           <Link href="/app" className="mt-4 inline-block font-semibold">
             Go to app
@@ -33,8 +33,8 @@ export default async function InvitePage({
 
   if (!user) {
     return (
-      <main className="tide-wave-bg flex min-h-screen items-center justify-center px-4">
-        <div className="tide-panel max-w-md p-8 text-center">
+      <main className="rowgon-wave-bg flex min-h-screen items-center justify-center px-4">
+        <div className="rowgon-panel max-w-md p-8 text-center">
           <h1 className="font-[family-name:var(--font-display)] text-2xl text-[#0A3D45]">
             Join {invite.workspace.name}
           </h1>
@@ -46,10 +46,10 @@ export default async function InvitePage({
             to accept.
           </p>
           <div className="mt-6 flex justify-center gap-3">
-            <Link href="/login" className="tide-btn-primary">
+            <Link href="/login" className="rowgon-btn-primary">
               Sign in
             </Link>
-            <Link href="/signup" className="tide-btn-secondary">
+            <Link href="/signup" className="rowgon-btn-secondary">
               Sign up
             </Link>
           </div>
@@ -59,8 +59,8 @@ export default async function InvitePage({
   }
 
   return (
-    <main className="tide-wave-bg flex min-h-screen items-center justify-center px-4">
-      <div className="tide-panel max-w-md p-8 text-center">
+    <main className="rowgon-wave-bg flex min-h-screen items-center justify-center px-4">
+      <div className="rowgon-panel max-w-md p-8 text-center">
         <h1 className="font-[family-name:var(--font-display)] text-2xl text-[#0A3D45]">
           Join {invite.workspace.name}
         </h1>

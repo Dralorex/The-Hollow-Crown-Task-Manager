@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef } from "react";
 import { useFormStatus } from "react-dom";
 import type { ActionResult } from "@/app/actions/auth";
+import { enterAdvancesFocus } from "@/lib/form-keyboard";
 
 export type { ActionResult };
 
@@ -57,7 +58,7 @@ export function AuthForm({
           If that account has an email, a reset link was prepared.
         </p>
       ) : null}
-      <SubmitButton label={submitLabel} className="tide-btn-primary" />
+      <SubmitButton label={submitLabel} className="rowgon-btn-primary" />
       {extras}
     </form>
   );
@@ -68,21 +69,45 @@ export function InlineActionForm({
   submitLabel,
   children,
   className,
+  submitVariant = "secondary",
+  submitClassName,
+  onSuccess,
 }: {
   action: FormAction;
   submitLabel: string;
   children: React.ReactNode;
   className?: string;
+  submitVariant?: "primary" | "secondary";
+  submitClassName?: string;
+  /** Called after a successful action result (e.g. reset local fields). */
+  onSuccess?: () => void;
 }) {
   const [state, formAction] = useActionState(action, null);
+  const handledSuccess = useRef<ActionResult | null>(null);
+  const base =
+    submitVariant === "primary" ? "rowgon-btn-primary text-sm" : "rowgon-btn-secondary text-sm";
+
+  useEffect(() => {
+    if (!state?.ok || !onSuccess) return;
+    if (handledSuccess.current === state) return;
+    handledSuccess.current = state;
+    onSuccess();
+  }, [state, onSuccess]);
 
   return (
-    <form className={className ?? "flex flex-col gap-3"} action={formAction}>
+    <form
+      className={className ?? "flex flex-col gap-3"}
+      action={formAction}
+      onKeyDown={enterAdvancesFocus}
+    >
       {children}
       {state && !state.ok ? (
         <p className="text-sm text-[#9b2f22]">{state.error}</p>
       ) : null}
-      <SubmitButton label={submitLabel} className="tide-btn-secondary text-sm" />
+      <SubmitButton
+        label={submitLabel}
+        className={`${base} ${submitClassName ?? ""}`.trim()}
+      />
     </form>
   );
 }

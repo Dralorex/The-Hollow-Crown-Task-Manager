@@ -1,4 +1,4 @@
-# Tidework Task Manager
+# Rowgon Task Manager
 
 Collaborative task management where urgency rises with due dates — nested folders, claimable tasks, roles, friends, and private chats.
 
@@ -12,16 +12,24 @@ Collaborative task management where urgency rises with due dates — nested fold
 - **Tags** — public tags (Editor+); private tags after claiming a task
 - **Search** — name relevance + tag filters in the current folder area
 - **Invites** — Owner/Admin invite by username or email
+- **Archive** — Admin+ soft-delete workspaces/folders with visibility (everyone / by role / specific people); history preserved
+- **Folder ACL** — custom workspace roles; folders can require roles (Owner/Admin bypass); hide or show locked folders
+- **Folder templates** — starter trees (Simple / Project / Team) plus save/reuse workspace folder layouts
+- **Calendar** — list/month views; drag personal, task, and workspace items between days
+- **Weekly digest** — optional email summary of overdue / due soon / reviews (Alerts → send preview)
+- **Chat task links** — type `#` in chat to attach a task; messages render deep links into the folder
+- **Presence** — online dots and “is typing…” via SSE (`/api/chat/[groupId]/presence`), with poll fallback
 - **Social** — friends; DMs (friends free; workspace DMs need accept); Admin+ group chats
 
 ## Stack
 
-Next.js (App Router) · Prisma · SQLite · bcrypt sessions · Tailwind CSS
+Next.js (App Router) · Prisma · Neon Postgres · bcrypt sessions · Tailwind CSS
 
 ## Setup
 
 ```bash
 cp .env.example .env
+# Set rowgon_storage_DATABASE_URL (or DATABASE_URL) to your Neon Postgres URL
 npm install
 npx prisma db push
 npm run dev
@@ -35,8 +43,10 @@ Open [http://localhost:3000](http://localhost:3000).
 |---------|-------------|
 | `npm run dev` | Dev server |
 | `npm run build` | Production build |
+| `npm run vercel-build` | Vercel: check DB env → `prisma db push` → build |
 | `npm run start` | Start production server |
-| `npx prisma db push` | Sync schema to SQLite |
+| `npm run test:e2e` | Playwright e2e (calendar DnD; needs Postgres URL) |
+| `npx prisma db push` | Sync schema to Postgres |
 | `npx prisma studio` | Browse data |
 
 ## Roles

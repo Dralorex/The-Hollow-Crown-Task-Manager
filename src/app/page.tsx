@@ -7,7 +7,7 @@ export default async function HomePage() {
   if (user) redirect("/app");
 
   return (
-    <main className="tide-wave-bg relative min-h-screen overflow-hidden">
+    <main className="rowgon-wave-bg relative min-h-screen overflow-hidden">
       <div
         aria-hidden
         className="pointer-events-none absolute inset-x-0 bottom-0 h-[42vh] opacity-40"
@@ -18,36 +18,36 @@ export default async function HomePage() {
       />
 
       <div className="relative mx-auto flex min-h-screen max-w-5xl flex-col px-6 pb-16 pt-8">
-        <nav className="flex items-center justify-between animate-tide-rise">
+        <nav className="flex items-center justify-between animate-rowgon-rise">
           <span className="font-[family-name:var(--font-display)] text-2xl tracking-tight text-[#0A3D45]">
-            Tidework
+            Rowgon
           </span>
           <div className="flex items-center gap-3">
             <Link href="/login" className="text-sm font-semibold text-[#0A3D45]/80 hover:text-[#0A3D45]">
               Sign in
             </Link>
-            <Link href="/signup" className="tide-btn-primary text-sm">
+            <Link href="/signup" className="rowgon-btn-primary text-sm">
               Get started
             </Link>
           </div>
         </nav>
 
         <section className="flex flex-1 flex-col justify-center gap-8 py-16 md:max-w-2xl">
-          <p className="animate-tide-swell font-[family-name:var(--font-display)] text-6xl leading-[0.95] tracking-tight text-[#0A3D45] sm:text-7xl md:text-8xl">
-            Tidework
+          <p className="animate-rowgon-swell font-[family-name:var(--font-display)] text-6xl leading-[0.95] tracking-tight text-[#0A3D45] sm:text-7xl md:text-8xl">
+            Rowgon
           </p>
-          <h1 className="animate-tide-rise-delay max-w-xl font-[family-name:var(--font-display)] text-2xl font-medium leading-snug text-[#0A3D45]/90 sm:text-3xl">
+          <h1 className="animate-rowgon-rise-delay max-w-xl font-[family-name:var(--font-display)] text-2xl font-medium leading-snug text-[#0A3D45]/90 sm:text-3xl">
             Task management that rises with the deadline.
           </h1>
-          <p className="animate-tide-rise-delay-2 max-w-lg text-lg text-[#0A3D45]/75">
+          <p className="animate-rowgon-rise-delay-2 max-w-lg text-lg text-[#0A3D45]/75">
             Nest folders, claim work, and let urgency pull the next due task to the top —
             with friends, reviews, and chats that stay in the right circle.
           </p>
-          <div className="animate-tide-rise-delay-2 flex flex-wrap gap-3">
-            <Link href="/signup" className="tide-btn-primary">
+          <div className="animate-rowgon-rise-delay-2 flex flex-wrap gap-3">
+            <Link href="/signup" className="rowgon-btn-primary">
               Start floating
             </Link>
-            <Link href="/login" className="tide-btn-secondary">
+            <Link href="/login" className="rowgon-btn-secondary">
               I already have an account
             </Link>
           </div>

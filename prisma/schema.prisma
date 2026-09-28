@@ -1,4 +1,4 @@
-// Tidework Task Manager — Prisma schema
+// Rowgon Task Manager — Prisma schema
 
 generator client {
   provider = "prisma-client"
@@ -6,7 +6,7 @@ generator client {
 }
 
 datasource db {
-  provider = "sqlite"
+  provider = "postgresql"
 }
 
 enum Role {
@@ -18,9 +18,13 @@ enum Role {
 
 enum TaskPriority {
   CRITICAL
+  URGENT
   HIGH
+  ELEVATED
   MEDIUM
+  NORMAL
   LOW
+  MINIMAL
 }
 
 enum TaskStatus {
@@ -43,6 +47,12 @@ enum FriendshipStatus {
   DECLINED
 }
 
+enum ChatNotifyMode {
+  ALL
+  MENTIONS
+  MUTE
+}
+
 enum DmRequestStatus {
   PENDING
   ACCEPTED
@@ -54,26 +64,57 @@ model User {
   username     String   @unique
   passwordHash String
   email        String?  @unique
+  nickname     String?
+  /** Month-day birthday (year ignored for display). Stored as UTC noon on that month/day in a fixed year. */
+  birthday              DateTime?
+  shareBirthdayFriends  Boolean  @default(false)
+  shareBirthdayWorkspaces Boolean @default(false)
+  /** Always prompt before sharing birthday with a new friend/workspace. */
+  askBeforeShareBirthday Boolean @default(true)
+  showBirthdaysOnCalendar Boolean @default(true)
+  /** Opt-in weekly email of due / review / claimed work */
+  weeklyDigestEnabled Boolean @default(true)
+  weeklyDigestLastSentAt DateTime?
+  /** Soft-delete: username is freed; chats keep history labeled with deletedUsername. */
+  deletedAt             DateTime?
+  deletedUsername       String?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
   sessions              Session[]
   passwordResetTokens   PasswordResetToken[]
+  emailVerifications    EmailVerification[]
   ownedWorkspaces       Workspace[]          @relation("WorkspaceOwner")
   memberships           Membership[]
   invitesSent           Invite[]             @relation("InvitesSent")
   assignedTasks         Task[]               @relation("TaskAssignee")
   createdTasks          Task[]               @relation("TaskCreator")
+  unclaimedTasks        Task[]               @relation("TaskUnclaimer")
+  sentBackTasks         Task[]               @relation("TaskSentBackBy")
   privateTags           Tag[]                @relation("TagCreator")
+  rememberedPrivateTags RememberedPrivateTag[]
   calendarEvents        CalendarEvent[]
+  personalEvents        PersonalCalendarEvent[]
+  workspaceEventsCreated WorkspaceCalendarEvent[] @relation("WorkspaceEventCreator")
+  calendarWorkspaceFilters CalendarWorkspaceFilter[]
+  birthdaySharesGiven   BirthdayShare[]      @relation("BirthdayShareOwner")
+  birthdaySharesReceived BirthdayShare[]     @relation("BirthdayShareViewer")
+  workspaceBirthdayRequests WorkspaceBirthdayRequest[] @relation("BirthdayRequestSubject")
   friendshipsRequested  Friendship[]         @relation("FriendshipRequester")
   friendshipsReceived   Friendship[]         @relation("FriendshipAddressee")
+  friendProfilesOwned   FriendProfile[]      @relation("FriendProfileOwner")
+  friendProfilesAbout   FriendProfile[]      @relation("FriendProfileSubject")
   chatMemberships       ChatMember[]
   messages              Message[]
   dmRequestsSent        DmRequest[]          @relation("DmFrom")
   dmRequestsReceived    DmRequest[]          @relation("DmTo")
   notifications         Notification[]
   groupsCreated         ChatGroup[]          @relation("GroupCreator")
+  workspaceRoleSeens    WorkspaceRoleSeen[]
+  taskActivities        TaskActivity[]       @relation("TaskActivityActor")
+  messageMentions       MessageMention[]     @relation("MentionedUser")
+
+  @@index([deletedAt])
 }
 
 model Session {
@@ -89,21 +130,72 @@ model Session {
 
 model PasswordResetToken {
   id        String   @id @default(cuid())
-  token     String   @unique
+  /** 4-digit email code for website-based password reset. */
+  token     String
   userId    String
   expiresAt DateTime
+  attempts  Int      @default(0)
   createdAt DateTime @default(now())
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([token])
+}
+
+model EmailVerification {
+  id         String   @id @default(cuid())
+  userId     String
+  email      String
+  code       String
+  expiresAt  DateTime
+  attempts   Int      @default(0)
+  lastSentAt DateTime @default(now())
+  createdAt  DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId])
+  @@index([email])
+}
+
+/** Signup with email: account is created only after the code is verified. */
+model PendingSignup {
+  id             String   @id @default(cuid())
+  username       String   @unique
+  passwordHash   String
+  email          String
+  /** Optional display nickname applied when the account is created. */
+  nickname       String?
+  code           String
+  attempts       Int      @default(0)
+  /** Parsed by parseSignInDuration — session | 7 | 30 | 180 | 365 | forever */
+  signInDuration String   @default("session")
+  expiresAt      DateTime
+  lastSentAt     DateTime @default(now())
+  createdAt      DateTime @default(now())
+
+  @@index([email])
 }
 
 model Workspace {
   id        String   @id @default(cuid())
   name      String
   ownerId   String
+  /** Show Base (manual priority) chip on task rows. */
+  showUrgencyBase  Boolean @default(false)
+  /** Show Date (due-pressure) chip on task rows. */
+  showUrgencyDate  Boolean @default(false)
+  /** Show Total (base + date) urgency chip on task rows. */
+  showUrgencyTotal Boolean @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  /** Soft-delete / archive — null means active */
+  archivedAt DateTime?
+  archivedById String?
+  /** all | roles | members — who (besides Admin+) can still open it */
+  archiveVisibility String?
+  archiveVisibilityRoles String?
+  archiveVisibilityUserIds String?
 
   owner       User         @relation("WorkspaceOwner", fields: [ownerId], references: [id])
   memberships Membership[]
@@ -112,8 +204,14 @@ model Workspace {
   tasks       Task[]
   tags        Tag[]
   chatGroups  ChatGroup[]
+  calendarEvents WorkspaceCalendarEvent[]
+  birthdayRequests WorkspaceBirthdayRequest[]
+  calendarFilters CalendarWorkspaceFilter[]
+  customRoles WorkspaceRole[]
+  folderTemplates FolderTemplate[]
 
   @@index([ownerId])
+  @@index([archivedAt])
 }
 
 model Membership {
@@ -122,12 +220,72 @@ model Membership {
   userId      String
   role        Role
   createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
-  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace   Workspace        @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  user        User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  customRoles MembershipRole[]
 
   @@unique([workspaceId, userId])
   @@index([userId])
+}
+
+/** Workspace-scoped custom role (Builders, Developers, …) — separate from Membership.role. */
+model WorkspaceRole {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  /** When set, folders requiring this role are hidden from members who lack access (unless alwaysVisible). */
+  hideFolders Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace   Workspace          @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  members     MembershipRole[]
+  folders     FolderRole[]
+  seenBy      WorkspaceRoleSeen[]
+
+  @@unique([workspaceId, name])
+  @@index([workspaceId])
+}
+
+model MembershipRole {
+  id           String @id @default(cuid())
+  membershipId String
+  roleId       String
+
+  membership Membership    @relation(fields: [membershipId], references: [id], onDelete: Cascade)
+  role       WorkspaceRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([membershipId, roleId])
+  @@index([roleId])
+}
+
+/** Required custom roles for a folder. Empty = open to everyone (same as “All”). */
+model FolderRole {
+  id       String @id @default(cuid())
+  folderId String
+  roleId   String
+
+  folder Folder        @relation(fields: [folderId], references: [id], onDelete: Cascade)
+  role   WorkspaceRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([folderId, roleId])
+  @@index([roleId])
+}
+
+/** Per-user cursor for role-based new-task activity. */
+model WorkspaceRoleSeen {
+  id         String   @id @default(cuid())
+  userId     String
+  roleId     String
+  lastSeenAt DateTime @default(now())
+
+  user User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  role WorkspaceRole @relation(fields: [roleId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, roleId])
+  @@index([roleId])
 }
 
 model Invite {
@@ -155,16 +313,45 @@ model Folder {
   workspaceId String
   parentId    String?
   name        String
+  /** Hide this folder from members who cannot access it (instead of showing locked). */
+  hideFromUnauthorized Boolean @default(false)
+  /** Always show in the tree regardless of role hide rules. Does not grant access. */
+  alwaysVisible        Boolean @default(false)
+  /** Anyone may open this folder even when roles are set. Does not change ancestors. */
+  alwaysAccessible     Boolean @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  archivedAt  DateTime?
+  archivedById String?
+  /** all | roles | members */
+  archiveVisibility String?
+  archiveVisibilityRoles String?
+  archiveVisibilityUserIds String?
+
+  workspace     Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  parent        Folder?      @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
+  children      Folder[]     @relation("FolderTree")
+  tasks         Task[]
+  requiredRoles FolderRole[]
+
+  @@index([workspaceId])
+  @@index([parentId])
+  @@index([archivedAt])
+}
+
+/** Saved folder name-trees for a workspace (no tasks). */
+model FolderTemplate {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  /** JSON array of { name, children? } nodes */
+  treeJson    String
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
-  parent    Folder?   @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
-  children  Folder[]  @relation("FolderTree")
-  tasks     Task[]
 
   @@index([workspaceId])
-  @@index([parentId])
 }
 
 model Task {
@@ -180,6 +367,22 @@ model Task {
   createdById       String
   completionComment String?
   claimedAt         DateTime?
+  lastUnclaimReason String?
+  lastUnclaimWorkNote String?
+  lastUnclaimedById String?
+  lastSendBackReason String?
+  lastSentBackById String?
+  /** daily | weekly | monthly — null means one-off */
+  recurrenceCadence String?
+  /** CSV of weekday ints 0–6 (Sun–Sat) for weekly */
+  recurrenceWeekDays String?
+  /** CSV of month days 1–31 for monthly */
+  recurrenceMonthDays String?
+  /** complete | due | both */
+  recurrenceSpawnMode String?
+  /** same | pool | clear */
+  recurrenceNextAssignee String?
+  recurrenceSeriesId String?
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
 
@@ -187,13 +390,47 @@ model Task {
   folder         Folder          @relation(fields: [folderId], references: [id], onDelete: Cascade)
   assignee       User?           @relation("TaskAssignee", fields: [assigneeId], references: [id])
   createdBy      User            @relation("TaskCreator", fields: [createdById], references: [id])
+  lastUnclaimedBy User?          @relation("TaskUnclaimer", fields: [lastUnclaimedById], references: [id])
+  lastSentBackBy  User?          @relation("TaskSentBackBy", fields: [lastSentBackById], references: [id])
   tags           TaskTag[]
   calendarEvents CalendarEvent[]
+  rememberedPrivateTags RememberedPrivateTag[]
+  activities     TaskActivity[]
+  checklistItems TaskChecklistItem[]
 
   @@index([workspaceId])
   @@index([folderId])
   @@index([assigneeId])
   @@index([status])
+  @@index([recurrenceSeriesId])
+}
+
+model TaskActivity {
+  id        String   @id @default(cuid())
+  taskId    String
+  actorId   String?
+  type      String
+  message   String
+  createdAt DateTime @default(now())
+
+  task  Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actor User? @relation("TaskActivityActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([taskId, createdAt])
+}
+
+model TaskChecklistItem {
+  id        String   @id @default(cuid())
+  taskId    String
+  label     String
+  done      Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
 }
 
 model Tag {
@@ -207,6 +444,7 @@ model Tag {
   workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   creator   User?     @relation("TagCreator", fields: [creatorId], references: [id])
   tasks     TaskTag[]
+  rememberedPrivateTags RememberedPrivateTag[]
 
   @@index([workspaceId])
   @@index([creatorId])
@@ -222,6 +460,21 @@ model TaskTag {
   @@id([taskId, tagId])
 }
 
+/** Private tags removed on unclaim and restored if the same user reclaims. */
+model RememberedPrivateTag {
+  userId String
+  taskId String
+  tagId  String
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  tag  Tag  @relation(fields: [tagId], references: [id], onDelete: Cascade)
+
+  @@id([userId, taskId, tagId])
+  @@index([taskId])
+}
+
+/** Synced claimed-task due markers on a member’s personal calendar. */
 model CalendarEvent {
   id        String   @id @default(cuid())
   userId    String
@@ -236,6 +489,96 @@ model CalendarEvent {
 
   @@unique([userId, taskId])
   @@index([userId, dueDate])
+}
+
+/** Freeform events on a user’s private calendar. */
+model PersonalCalendarEvent {
+  id          String    @id @default(cuid())
+  userId      String
+  title       String
+  description String    @default("")
+  date        DateTime
+  allDay      Boolean   @default(true)
+  startAt     DateTime?
+  endAt       DateTime?
+  hidden      Boolean   @default(false)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, date])
+}
+
+/** Freeform events on a workspace calendar (Editor+ can create). */
+model WorkspaceCalendarEvent {
+  id          String    @id @default(cuid())
+  workspaceId String
+  createdById String
+  title       String
+  description String    @default("")
+  date        DateTime
+  allDay      Boolean   @default(true)
+  startAt     DateTime?
+  endAt       DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  createdBy User      @relation("WorkspaceEventCreator", fields: [createdById], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, date])
+}
+
+/** Which workspaces’ claimed tasks appear on the personal calendar. */
+model CalendarWorkspaceFilter {
+  userId      String
+  workspaceId String
+  enabled     Boolean  @default(true)
+
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@id([userId, workspaceId])
+}
+
+enum BirthdayShareStatus {
+  PENDING
+  ACTIVE
+  DECLINED
+  HIDDEN
+}
+
+/** Friend can see this user’s birthday on their personal calendar. */
+model BirthdayShare {
+  id        String              @id @default(cuid())
+  ownerId   String
+  viewerId  String
+  status    BirthdayShareStatus @default(PENDING)
+  createdAt DateTime            @default(now())
+  updatedAt DateTime            @updatedAt
+
+  owner  User @relation("BirthdayShareOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  viewer User @relation("BirthdayShareViewer", fields: [viewerId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, viewerId])
+  @@index([viewerId])
+}
+
+/** Owner must approve adding a member’s birthday to the workspace calendar. */
+model WorkspaceBirthdayRequest {
+  id          String              @id @default(cuid())
+  workspaceId String
+  subjectId   String
+  status      BirthdayShareStatus @default(PENDING)
+  createdAt   DateTime            @default(now())
+  updatedAt   DateTime            @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  subject   User      @relation("BirthdayRequestSubject", fields: [subjectId], references: [id], onDelete: Cascade)
+
+  @@unique([workspaceId, subjectId])
+  @@index([workspaceId])
 }
 
 model Friendship {
@@ -253,13 +596,33 @@ model Friendship {
   @@index([addresseeId])
 }
 
+/** Per-viewer nickname/notes about a friend (directional). */
+model FriendProfile {
+  id               String   @id @default(cuid())
+  ownerId          String
+  friendId         String
+  personalNickname String?
+  personalNotes    String?  @db.Text
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  owner  User @relation("FriendProfileOwner", fields: [ownerId], references: [id], onDelete: Cascade)
+  friend User @relation("FriendProfileSubject", fields: [friendId], references: [id], onDelete: Cascade)
+
+  @@unique([ownerId, friendId])
+  @@index([friendId])
+}
+
 model ChatGroup {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   workspaceId String?
   name        String
-  isDirect    Boolean  @default(false)
+  isDirect    Boolean   @default(false)
   createdById String
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
+  /** Set when either participant closes a DM — viewable but not sendable. */
+  closedAt    DateTime?
+  closedById  String?
 
   workspace Workspace?   @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   createdBy User         @relation("GroupCreator", fields: [createdById], references: [id])
@@ -271,10 +634,16 @@ model ChatGroup {
 }
 
 model ChatMember {
-  id       String   @id @default(cuid())
-  groupId  String
-  userId   String
-  joinedAt DateTime @default(now())
+  id           String         @id @default(cuid())
+  groupId      String
+  userId       String
+  notifyMode   ChatNotifyMode @default(ALL)
+  joinedAt     DateTime       @default(now())
+  /** Heartbeat while the member has this chat open — used to skip noisy notifications. */
+  lastActiveAt DateTime?
+  lastSeenAt   DateTime?
+  /** Last keystroke in this chat — cleared after a few seconds of idle */
+  typingAt     DateTime?
 
   group ChatGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -308,10 +677,25 @@ model Message {
   body      String
   createdAt DateTime @default(now())
 
-  group  ChatGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  sender User      @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  group    ChatGroup        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  sender   User             @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  mentions MessageMention[]
 
   @@index([groupId, createdAt])
+}
+
+model MessageMention {
+  id         String  @id @default(cuid())
+  messageId  String
+  kind       String
+  userId     String?
+  roleName   String?
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User?   @relation("MentionedUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([messageId])
+  @@index([userId])
 }
 
 model Notification {

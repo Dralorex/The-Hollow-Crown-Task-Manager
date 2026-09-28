@@ -1,5 +1,6 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { Fraunces, Nunito } from "next/font/google";
+import { MobileViewportReset } from "@/app/components/mobile-viewport-reset";
 import "./globals.css";
 
 const display = Fraunces({
@@ -14,18 +15,33 @@ const body = Nunito({
 });
 
 export const metadata: Metadata = {
-  title: "Tidework Task Manager",
+  metadataBase: new URL("https://rowgon.com"),
+  title: "Rowgon Task Manager",
   description:
-    "Claim work as the tide rises. Nested folders, urgency that pulls due tasks up, friends, and private chats.",
+    "Nested folders, urgency that pulls due tasks up, friends, and private chats.",
 };
 
-export default function RootLayout({ children }: LayoutProps<"/">) {
+/** Keep the page at 1× on load; pinch-zoom still allowed. */
+export const viewport: Viewport = {
+  width: "device-width",
+  initialScale: 1,
+  viewportFit: "cover",
+};
+
+export default function RootLayout({
+  children,
+}: {
+  children: React.ReactNode;
+}) {
   return (
     <html
       lang="en"
       className={`${display.variable} ${body.variable} h-full antialiased`}
     >
-      <body className="min-h-full flex flex-col">{children}</body>
+      <body className="min-h-full flex flex-col">
+        <MobileViewportReset />
+        {children}
+      </body>
     </html>
   );
 }
