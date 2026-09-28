@@ -21,6 +21,7 @@ export function FolderActions({
   requiredRoleIds = [],
   hideFromUnauthorized = false,
   alwaysVisible = false,
+  alwaysAccessible = false,
 }: {
   workspaceId: string;
   folderId: string;
@@ -30,6 +31,7 @@ export function FolderActions({
   requiredRoleIds?: string[];
   hideFromUnauthorized?: boolean;
   alwaysVisible?: boolean;
+  alwaysAccessible?: boolean;
 }) {
   const [open, setOpen] = useState(false);
   const [renaming, setRenaming] = useState(false);
@@ -43,6 +45,7 @@ export function FolderActions({
   );
   const [hideUnauthorized, setHideUnauthorized] = useState(hideFromUnauthorized);
   const [alwaysShow, setAlwaysShow] = useState(alwaysVisible);
+  const [alwaysAccess, setAlwaysAccess] = useState(alwaysAccessible);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
@@ -56,7 +59,8 @@ export function FolderActions({
     setAccessMode(requiredRoleIds.length === 0 ? "all" : "roles");
     setHideUnauthorized(hideFromUnauthorized);
     setAlwaysShow(alwaysVisible);
-  }, [requiredRoleIds, hideFromUnauthorized, alwaysVisible]);
+    setAlwaysAccess(alwaysAccessible);
+  }, [requiredRoleIds, hideFromUnauthorized, alwaysVisible, alwaysAccessible]);
 
   async function saveRename(e: React.FormEvent) {
     e.preventDefault();
@@ -102,6 +106,7 @@ export function FolderActions({
       }
       fd.set("hideFromUnauthorized", hideUnauthorized ? "1" : "0");
       fd.set("alwaysVisible", alwaysShow ? "1" : "0");
+      fd.set("alwaysAccessible", alwaysAccess ? "1" : "0");
       const result = await setFolderRolesAction(null, fd);
       if (result && !result.ok) {
         setError(result.error);
@@ -121,6 +126,7 @@ export function FolderActions({
     setAccessMode(requiredRoleIds.length === 0 ? "all" : "roles");
     setHideUnauthorized(hideFromUnauthorized);
     setAlwaysShow(alwaysVisible);
+    setAlwaysAccess(alwaysAccessible);
   }
 
   return (
@@ -292,6 +298,20 @@ export function FolderActions({
                     Always show
                     <span className="mt-0.5 block text-[11px] font-normal text-[color:var(--tide-deep)]/55">
                       Overrides hide rules — always visible in the tree (still locked without access).
+                    </span>
+                  </span>
+                </label>
+                <label className="flex cursor-pointer items-start gap-2 rounded-md px-1 py-1 text-sm text-[color:var(--tide-deep)] hover:bg-[color:var(--tide-deep)]/8">
+                  <input
+                    type="checkbox"
+                    className="mt-0.5"
+                    checked={alwaysAccess}
+                    onChange={(e) => setAlwaysAccess(e.target.checked)}
+                  />
+                  <span>
+                    Always accessible
+                    <span className="mt-0.5 block text-[11px] font-normal text-[color:var(--tide-deep)]/55">
+                      Anyone can open this folder even when roles are set.
                     </span>
                   </span>
                 </label>

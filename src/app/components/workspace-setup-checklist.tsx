@@ -266,6 +266,16 @@ export function WorkspaceSetupChecklist({
           body="Optional: keep the folder visible even when restricted."
           actionLabel="Toggle Always Show"
           onAction={() => clickOnboardingStep("folder-always")}
+          onNext={() => setStep("folder-accessible")}
+        />
+      ) : null}
+
+      {step === "folder-accessible" ? (
+        <OnboardingPrompt
+          title="Always accessible"
+          body="Optional: let anyone open this folder even when roles are set. Then add the folder."
+          actionLabel="Toggle Always Accessible"
+          onAction={() => clickOnboardingStep("folder-accessible")}
           onNext={() => setStep("folder-submit")}
         />
       ) : null}

@@ -17,12 +17,15 @@ import { AddTaskTagsForm } from "@/app/components/add-task-tags-form";
 import { SendBackTaskControl } from "@/app/components/send-back-task-control";
 import { UnclaimTaskControl } from "@/app/components/unclaim-task-control";
 import {
+  addChecklistItemAction,
+  assignTaskAction,
   removeTaskTagAction,
   claimTaskAction,
   completeTaskAction,
   deleteTaskAction,
   forceUnclaimTaskAction,
   reviewTaskAction,
+  toggleChecklistItemForm,
   updateTaskAction,
 } from "@/app/actions/tasks";
 import { personLabel } from "@/lib/utils";
@@ -41,6 +44,11 @@ type TagLink = {
   tag: { name: string; isPublic: boolean };
 };
 
+export type AssignableMember = {
+  id: string;
+  username: string;
+};
+
 export type WorkspaceTaskData = {
   id: string;
   name: string;
@@ -55,11 +63,14 @@ export type WorkspaceTaskData = {
   lastUnclaimReason: string | null;
   lastUnclaimWorkNote: string | null;
   lastSendBackReason: string | null;
+  recurrenceCadence: string | null;
   assignee: Person | null;
   lastUnclaimedBy: Person | null;
   lastSentBackBy: Person | null;
   folder: { id: string; name: string } | null;
   tags: TagLink[];
+  checklistItems: { id: string; label: string; done: boolean }[];
+  activities: { id: string; message: string; createdAt: Date; type: string }[];
 };
 
 function dueInputValue(due: Date | null) {
@@ -416,15 +427,27 @@ export function WorkspaceTaskRow({
   publicTagOptions?: string[];
   privateTagOptions?: string[];
   urgencyChips?: UrgencyChipPrefs;
+  assignableMembers?: AssignableMember[];
 }) {
   const isClaimed = Boolean(task.assigneeId);
+  const isOpenAssigned = task.status === "OPEN" && Boolean(task.assigneeId);
+  const assignedToOther = isOpenAssigned && task.assigneeId !== userId;
   const canClaim =
-    task.status === "OPEN" || (task.status === "CLAIMED" && !task.assigneeId);
+    !assignedToOther &&
+    (task.status === "OPEN" || (task.status === "CLAIMED" && !task.assigneeId));
   const canReadyForReview =
     task.assigneeId === userId &&
     (task.status === "CLAIMED" || task.status === "OPEN");
+  const canChecklist = task.assigneeId === userId && task.status === "CLAIMED";
   const canAddPrivateTag = task.assigneeId === userId;
+  const claimLabel =
+    isOpenAssigned && task.assigneeId === userId
+      ? "Claim assignment"
+      : "Claim Task";
   const [expanded, setExpanded] = useState(false);
+  const [historyOpen, setHistoryOpen] = useState(false);
+  const checklist = task.checklistItems ?? [];
+  const activities = task.activities ?? [];
   const { blink } = useWorkspaceOnboarding();
   const highlightTaskMenu = canEdit && blink("task-menu");
 
@@ -509,13 +532,22 @@ export function WorkspaceTaskRow({
               dueDate={task.dueDate}
               prefs={urgencyChips}
             />
+            {task.recurrenceCadence ? (
+              <span className="rounded-md bg-[#1a7a82]/12 px-2 py-0.5 text-[11px] font-semibold capitalize text-[#0A3D45]/75">
+                ↻ {task.recurrenceCadence}
+              </span>
+            ) : null}
             {!expanded ? (
               <span className="text-xs text-[#0A3D45]/60">
-                {isClaimed
-                  ? `claimed by ${
+                {isOpenAssigned
+                  ? `Assigned to ${
                       task.assignee ? personLabel(task.assignee) : "someone"
                     }`
-                  : "unclaimed"}
+                  : isClaimed
+                    ? `claimed by ${
+                        task.assignee ? personLabel(task.assignee) : "someone"
+                      }`
+                    : "unclaimed"}
               </span>
             ) : (
               <span className="text-xs uppercase tracking-wide text-[#0A3D45]/50">
@@ -557,9 +589,11 @@ export function WorkspaceTaskRow({
                 {task.dueDate
                   ? `Due ${format(task.dueDate, "MMM d, yyyy")}`
                   : "No due date"}
-                {task.assignee
-                  ? ` · claimed by ${personLabel(task.assignee)}`
-                  : " · unclaimed"}
+                {isOpenAssigned && task.assignee
+                  ? ` · Assigned to ${personLabel(task.assignee)}`
+                  : task.assignee
+                    ? ` · claimed by ${personLabel(task.assignee)}`
+                    : " · unclaimed"}
               </p>
               {!task.assignee && task.lastUnclaimReason ? (
                 <div className="mt-2 rounded-md bg-[#0A3D45]/[0.04] px-2.5 py-2 text-xs text-[#0A3D45]/75">
@@ -594,6 +628,129 @@ export function WorkspaceTaskRow({
                   Review note: {task.completionComment}
                 </p>
               ) : null}
+
+              {canChecklist || checklist.length > 0 ? (
+                <div className="mt-3 rounded-xl border border-[#0A3D45]/10 bg-white/40 p-3">
+                  <p className="text-xs font-semibold uppercase tracking-wide text-[#0A3D45]/55">
+                    Checklist
+                  </p>
+                  <ul className="mt-2 space-y-2">
+                    {checklist.map((item) => (
+                      <li
+                        key={item.id}
+                        className="flex items-center gap-2 text-sm text-[#0A3D45]"
+                      >
+                        {canChecklist ? (
+                          <form
+                            action={toggleChecklistItemForm}
+                            className="flex min-w-0 flex-1 items-center gap-2"
+                          >
+                            <input
+                              type="hidden"
+                              name="workspaceId"
+                              value={workspaceId}
+                            />
+                            <input type="hidden" name="taskId" value={task.id} />
+                            <input type="hidden" name="itemId" value={item.id} />
+                            <button
+                              type="submit"
+                              className={`flex h-8 w-8 shrink-0 items-center justify-center rounded-md border text-sm ${
+                                item.done
+                                  ? "border-[#3DBEAB] bg-[#3DBEAB]/25 text-[#0A3D45]"
+                                  : "border-[#0A3D45]/25 bg-white/70 text-transparent"
+                              }`}
+                              aria-label={
+                                item.done ? "Mark incomplete" : "Mark complete"
+                              }
+                            >
+                              ✓
+                            </button>
+                            <span
+                              className={
+                                item.done
+                                  ? "min-w-0 text-[#0A3D45]/45 line-through"
+                                  : "min-w-0 text-[#0A3D45]"
+                              }
+                            >
+                              {item.label}
+                            </span>
+                          </form>
+                        ) : (
+                          <span
+                            className={
+                              item.done
+                                ? "text-[#0A3D45]/45 line-through"
+                                : "text-[#0A3D45]"
+                            }
+                          >
+                            {item.done ? "✓ " : "○ "}
+                            {item.label}
+                          </span>
+                        )}
+                      </li>
+                    ))}
+                  </ul>
+                  {canChecklist ? (
+                    <InlineActionForm
+                      className="mt-3 flex flex-col gap-2 sm:flex-row sm:items-center"
+                      action={addChecklistItemAction}
+                      submitLabel="Add item"
+                    >
+                      <input
+                        type="hidden"
+                        name="workspaceId"
+                        value={workspaceId}
+                      />
+                      <input type="hidden" name="taskId" value={task.id} />
+                      <input
+                        name="label"
+                        required
+                        placeholder="Checklist step"
+                        className="tide-input text-sm"
+                      />
+                    </InlineActionForm>
+                  ) : null}
+                  <p className="mt-2 text-[11px] text-[#0A3D45]/45">
+                    Checkmarks stay local — no admin ping until you send for
+                    review.
+                  </p>
+                </div>
+              ) : null}
+
+              <div className="mt-3">
+                <button
+                  type="button"
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setHistoryOpen((v) => !v);
+                  }}
+                  className="text-xs font-semibold text-[#0A3D45]/65 underline-offset-2 hover:underline"
+                >
+                  {historyOpen ? "Hide history" : "History"}
+                  {activities.length > 0 ? ` (${activities.length})` : ""}
+                </button>
+                {historyOpen ? (
+                  <div className="mt-2 max-h-40 overflow-y-auto rounded-xl border border-[#0A3D45]/10 bg-white/50 p-3">
+                    {activities.length === 0 ? (
+                      <p className="text-xs text-[#0A3D45]/55">No history yet.</p>
+                    ) : (
+                      <ul className="space-y-2 text-xs text-[#0A3D45]/75">
+                        {activities.map((a) => (
+                          <li
+                            key={a.id}
+                            className="border-b border-[#0A3D45]/6 pb-2 last:border-0 last:pb-0"
+                          >
+                            <p>{a.message}</p>
+                            <p className="mt-0.5 text-[10px] text-[#0A3D45]/45">
+                              {format(a.createdAt, "MMM d, yyyy · h:mm a")}
+                            </p>
+                          </li>
+                        ))}
+                      </ul>
+                    )}
+                  </div>
+                ) : null}
+              </div>
             </>
           ) : null}
         </div>
@@ -607,12 +764,18 @@ export function WorkspaceTaskRow({
               <InlineActionForm
                 className="flex flex-row items-center gap-2"
                 action={claimTaskAction}
-                submitLabel="Claim Task"
+                submitLabel={claimLabel}
               >
                 <input type="hidden" name="workspaceId" value={workspaceId} />
                 <input type="hidden" name="taskId" value={task.id} />
               </InlineActionForm>
             </div>
+          ) : null}
+
+          {!expanded && assignedToOther ? (
+            <p className="rounded-md bg-[#0A3D45]/6 px-2.5 py-1.5 text-[11px] font-semibold text-[#0A3D45]/70">
+              Assigned — claim locked
+            </p>
           ) : null}
 
           {expanded ? (
@@ -674,6 +837,39 @@ export function WorkspaceTaskRow({
                 />
               ) : null}
 
+              {canEdit &&
+              task.status === "OPEN" &&
+              assignableMembers.length > 0 ? (
+                <InlineActionForm
+                  action={assignTaskAction}
+                  submitLabel={task.assigneeId ? "Update assign" : "Auto-assign"}
+                  className="flex flex-col gap-2"
+                >
+                  <input type="hidden" name="workspaceId" value={workspaceId} />
+                  <input type="hidden" name="taskId" value={task.id} />
+                  <select
+                    name="assignTo"
+                    className="tide-input text-sm"
+                    defaultValue={task.assigneeId ?? ""}
+                  >
+                    <option value="">Manual Assign (anyone)</option>
+                    {assignableMembers.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        @{m.username}
+                      </option>
+                    ))}
+                  </select>
+                </InlineActionForm>
+              ) : null}
+
+              {assignedToOther ? (
+                <p className="rounded-md bg-[#0A3D45]/6 px-3 py-2 text-center text-xs font-semibold text-[#0A3D45]/70">
+                  Assigned to{" "}
+                  {task.assignee ? personLabel(task.assignee) : "someone"} — claim
+                  locked
+                </p>
+              ) : null}
+
               {task.status === "IN_REVIEW" && canEdit ? (
                 <div className="flex flex-wrap justify-end gap-2">
                   <InlineActionForm
@@ -701,7 +897,7 @@ export function WorkspaceTaskRow({
                   <InlineActionForm
                     className="flex flex-row items-center gap-2"
                     action={claimTaskAction}
-                    submitLabel="Claim Task"
+                    submitLabel={claimLabel}
                   >
                     <input
                       type="hidden"

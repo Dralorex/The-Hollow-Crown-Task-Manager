@@ -160,6 +160,8 @@ export async function setFolderRolesAction(
         hideFromUnauthorized:
           String(formData.get("hideFromUnauthorized") ?? "0") === "1",
         alwaysVisible: String(formData.get("alwaysVisible") ?? "0") === "1",
+        alwaysAccessible:
+          String(formData.get("alwaysAccessible") ?? "0") === "1",
       },
     }),
   ]);
