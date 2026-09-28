@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   WorkspaceTaskRow,
   type WorkspaceTaskData,
@@ -20,6 +20,8 @@ const SECTIONS: {
   { id: "completed", title: "Completed" },
 ];
 
+const STORAGE_PREFIX = "rowgon.task-sections.open.";
+
 function sectionForTask(task: {
   status: TaskStatus;
   assigneeId: string | null;
@@ -30,18 +32,64 @@ function sectionForTask(task: {
   return "unclaimed";
 }
 
+function storageKey(workspaceId: string) {
+  return `${STORAGE_PREFIX}${workspaceId}`;
+}
+
+function readOpenMap(workspaceId: string): Partial<Record<SectionId, boolean>> {
+  if (typeof window === "undefined") return {};
+  try {
+    const raw = window.localStorage.getItem(storageKey(workspaceId));
+    if (!raw) return {};
+    const parsed = JSON.parse(raw) as Partial<Record<SectionId, boolean>>;
+    if (!parsed || typeof parsed !== "object") return {};
+    return parsed;
+  } catch {
+    return {};
+  }
+}
+
+function writeOpenMap(
+  workspaceId: string,
+  map: Partial<Record<SectionId, boolean>>,
+) {
+  try {
+    window.localStorage.setItem(storageKey(workspaceId), JSON.stringify(map));
+  } catch {
+    // ignore quota / private mode
+  }
+}
+
 function TaskSection({
+  workspaceId,
+  sectionId,
   title,
   count,
-  defaultOpen = true,
   children,
 }: {
+  workspaceId: string;
+  sectionId: SectionId;
   title: string;
   count: number;
-  defaultOpen?: boolean;
   children: React.ReactNode;
 }) {
-  const [open, setOpen] = useState(defaultOpen);
+  // Default closed; restore saved preference after mount.
+  const [open, setOpen] = useState(false);
+
+  useEffect(() => {
+    const saved = readOpenMap(workspaceId)[sectionId];
+    if (typeof saved === "boolean") setOpen(saved);
+  }, [workspaceId, sectionId]);
+
+  const toggle = () => {
+    setOpen((prev) => {
+      const next = !prev;
+      const map = readOpenMap(workspaceId);
+      map[sectionId] = next;
+      writeOpenMap(workspaceId, map);
+      return next;
+    });
+  };
 
   return (
     <section className="space-y-3">
@@ -49,7 +97,7 @@ function TaskSection({
         type="button"
         className="flex w-full items-center justify-between gap-3 rounded-full border border-[#0A3D45]/12 bg-[#0A3D45]/[0.05] px-4 py-2.5 text-left transition hover:border-[#0A3D45]/20 hover:bg-[#0A3D45]/[0.08]"
         aria-expanded={open}
-        onClick={() => setOpen((v) => !v)}
+        onClick={toggle}
       >
         <span className="flex min-w-0 items-center gap-2">
           <span className="font-[family-name:var(--font-display)] text-lg text-[#0A3D45]">
@@ -114,9 +162,10 @@ export function TaskStatusSections({
         return (
           <TaskSection
             key={section.id}
+            workspaceId={workspaceId}
+            sectionId={section.id}
             title={section.title}
             count={list.length}
-            defaultOpen={section.id !== "completed"}
           >
             {list.length === 0 ? (
               <li className="text-sm text-[#0A3D45]/50">None</li>
