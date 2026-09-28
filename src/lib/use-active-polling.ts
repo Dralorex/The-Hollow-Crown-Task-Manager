@@ -3,16 +3,10 @@
 import { useEffect, useState } from "react";
 
 /** Pause background chat keepalives after this long with no user input. */
-export const IDLE_POLL_MS = 2 * 60 * 1000;
+export const IDLE_POLL_MS = 90_000;
 
-const ACTIVITY_EVENTS = [
-  "pointerdown",
-  "keydown",
-  "touchstart",
-  "mousemove",
-  "scroll",
-  "wheel",
-] as const;
+/** Intentional input only — ignore mousemove/scroll so idle can actually fire. */
+const ACTIVITY_EVENTS = ["pointerdown", "keydown", "touchstart"] as const;
 
 /**
  * True while the document is visible and the user has interacted recently.

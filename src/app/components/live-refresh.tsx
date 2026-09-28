@@ -9,7 +9,8 @@ import { useActivePolling } from "@/lib/use-active-polling";
  * workspace tasks/folders, or the viewer's membership roles change.
  * Pauses while the tab is hidden or the user has been idle.
  */
-export function LiveRefresh({ intervalMs = 4000 }: { intervalMs?: number }) {
+/** Default 30s — was 4s and alone could burn ~10k Edge Requests/tab/12h. */
+export function LiveRefresh({ intervalMs = 30_000 }: { intervalMs?: number }) {
   const router = useRouter();
   const stampRef = useRef<string | null>(null);
   const readyRef = useRef(false);

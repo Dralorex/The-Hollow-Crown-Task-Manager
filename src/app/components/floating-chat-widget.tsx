@@ -198,7 +198,7 @@ export function FloatingChatWidget({
           },
         );
       }
-    }, 4000);
+    }, 15_000);
     return () => window.clearInterval(id);
   }, [
     ready,
