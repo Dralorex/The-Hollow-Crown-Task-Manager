@@ -2,15 +2,14 @@ import { redirect } from "next/navigation";
 import Link from "next/link";
 import { InlineActionForm } from "@/app/components/forms";
 import { FolderActions } from "@/app/components/folder-actions";
-import { FolderBubble } from "@/app/components/folder-bubble";
-import { CreateFolderForm } from "@/app/components/create-folder-form";
+import { OnboardingFolderBubbles } from "@/app/components/onboarding-folder-bubbles";
+import { WorkspaceFoldersSidebar } from "@/app/components/workspace-folders-sidebar";
+import { WorkspaceAddTaskPanel } from "@/app/components/workspace-add-task-panel";
+import { WorkspaceOnboardingProvider } from "@/app/components/workspace-onboarding-context";
+import { WorkspaceSetupChecklist } from "@/app/components/workspace-setup-checklist";
+import { OnboardingChooser } from "@/app/components/onboarding-chooser";
+import { OnboardingScrollToBlink } from "@/app/components/onboarding-scroll-to-blink";
 import { WorkspaceTaskList } from "@/app/components/workspace-task-list";
-import { DueDateField } from "@/app/components/due-date-field";
-import { PriorityField } from "@/app/components/priority-field";
-import { TagSuggestInput } from "@/app/components/tag-suggest-input";
-import {
-  createTaskAction,
-} from "@/app/actions/tasks";
 import { inviteMemberAction } from "@/app/actions/workspaces";
 import { FriendInvitePicker } from "@/app/components/friend-invite-picker";
 import { PendingInvitesDropdown } from "@/app/components/pending-invites-dropdown";
@@ -41,13 +40,19 @@ export default async function WorkspacePage({
   searchParams,
 }: {
   params: Promise<{ workspaceId: string }>;
-  searchParams: Promise<{ folder?: string; q?: string; tag?: string }>;
+  searchParams: Promise<{
+    folder?: string;
+    q?: string;
+    tag?: string;
+    setup?: string;
+  }>;
 }) {
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
   const { workspaceId } = await params;
   const sp = await searchParams;
+  const showSetup = sp.setup === "1";
 
   const membership = await prisma.membership.findUnique({
     where: { workspaceId_userId: { workspaceId, userId: user.id } },
@@ -357,6 +362,30 @@ export default async function WorkspacePage({
     requestPending: pendingFriendIds.has(m.userId),
   }));
 
+  const assignableMembers = (
+    currentFolder
+      ? workspaceMembers.filter((m) =>
+          canAccessFolder(
+            currentFolder.id,
+            foldersById,
+            new Set(m.customRoles.map((cr) => cr.roleId)),
+            { membershipRole: m.role },
+          ),
+        )
+      : workspaceMembers
+  ).map((m) => ({
+    id: m.user.id,
+    username: m.user.username,
+  }));
+
+  const workspaceTaskCount = await prisma.task.count({
+    where: { workspaceId },
+  });
+
+  const hasFolder = visibleFolders.length > 0;
+  const hasTask = workspaceTaskCount > 0;
+  const hasInvite = pendingInvites.length > 0 || workspaceMembers.length > 1;
+
   function folderActionsProps(folderId: string, folderName: string) {
     const row = foldersById.get(folderId);
     return {
@@ -379,6 +408,16 @@ export default async function WorkspacePage({
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
+      <WorkspaceOnboardingProvider
+        workspaceId={workspaceId}
+        forceShow={showSetup}
+        hasFolder={hasFolder}
+        hasTask={hasTask}
+        inFolder={Boolean(currentFolder)}
+        hasRole={workspaceRoles.length > 0}
+        canManageRoles={canManageRoles}
+        canEdit={canEdit}
+      >
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <Link href="/app" className="text-sm text-[#0A3D45]/60 hover:underline">
@@ -409,6 +448,17 @@ export default async function WorkspacePage({
           </form>
         </div>
 
+        <OnboardingChooser />
+        <OnboardingScrollToBlink />
+
+        <WorkspaceSetupChecklist
+          hasFolder={hasFolder}
+          hasTask={hasTask}
+          hasInvite={hasInvite}
+          canInvite={canInvite}
+          inFolder={Boolean(currentFolder)}
+        />
+
         {roleActivity.length > 0 ? (
           <div className="mt-6">
             <RoleActivityNotices workspaceId={workspaceId} items={roleActivity} />
@@ -425,24 +475,14 @@ export default async function WorkspacePage({
         <div className="mt-8 grid gap-6 lg:grid-cols-[240px_1fr]">
           <aside className="space-y-4">
             <div className="tide-panel p-4">
-              <ChatSidebarSection
-                title="Add Folders"
-                description="Create a folder here. Browse folders from the main panel."
-              >
-                {canEdit ? (
-                  <CreateFolderForm
-                    workspaceId={workspaceId}
-                    parentId={currentFolder?.id ?? null}
-                    parentName={currentFolder?.name ?? null}
-                    roleNames={roleOptions.map((r) => r.name)}
-                    canSetAccess={canManageRoles}
-                  />
-                ) : (
-                  <p className="text-xs text-[color:var(--tide-deep)]/55">
-                    Editors and above can add folders.
-                  </p>
-                )}
-              </ChatSidebarSection>
+              <WorkspaceFoldersSidebar
+                workspaceId={workspaceId}
+                parentId={currentFolder?.id ?? null}
+                parentName={currentFolder?.name ?? null}
+                roleNames={roleOptions.map((r) => r.name)}
+                canSetAccess={canManageRoles}
+                canEdit={canEdit}
+              />
             </div>
 
             {canInvite ? (
@@ -544,54 +584,20 @@ export default async function WorkspacePage({
               </p>
 
               {childFolders.length > 0 ? (
-                <ul className="mt-4 space-y-2">
-                  {childFolders.map((f) => (
-                    <li key={f.id}>
-                      <FolderBubble
-                        workspaceId={workspaceId}
-                        folderId={f.id}
-                        name={f.name}
-                        locked={f.locked}
-                        restricted={f.requiredRoleIds.length > 0}
-                        done={folderDoneCounts.get(f.id) ?? 0}
-                        total={folderTotalCounts.get(f.id) ?? 0}
-                        unclaimed={folderCounts.get(f.id) ?? 0}
-                        showActions={canEdit && f.canAccess}
-                        folderActions={folderActionsProps(f.id, f.name)}
-                      />
-                    </li>
-                  ))}
-                </ul>
-              ) : null}
-
-              {canEdit && currentFolder ? (
-                <InlineActionForm
-                  className="mt-5 grid gap-2 sm:grid-cols-2"
-                  action={createTaskAction}
-                  submitLabel="Add task"
-                >
-                  <input type="hidden" name="workspaceId" value={workspaceId} />
-                  <input type="hidden" name="folderId" value={currentFolder.id} />
-                  <input name="name" required placeholder="Task Name" className="tide-input" />
-                  <PriorityField />
-                  <input
-                    name="description"
-                    placeholder="Description"
-                    className="tide-input sm:col-span-2"
-                  />
-                  <DueDateField name="dueDate" />
-                  <div className="sm:col-span-2">
-                    <TagSuggestInput
-                      name="tags"
-                      tags={publicTagOptions}
-                      placeholder="add tags: example, test, help"
-                      hint="Optional. Separate multiple tags with commas — same as Add Public Tag on a task."
-                      emptyMessage="No public tags in this folder yet — type a new one"
-                      allowMultiple
-                      keepOpenOnPick
-                    />
-                  </div>
-                </InlineActionForm>
+                <OnboardingFolderBubbles
+                  workspaceId={workspaceId}
+                  childFolders={childFolders.map((f) => ({
+                    id: f.id,
+                    name: f.name,
+                    locked: f.locked,
+                    restricted: f.requiredRoleIds.length > 0,
+                    done: folderDoneCounts.get(f.id) ?? 0,
+                    total: folderTotalCounts.get(f.id) ?? 0,
+                    unclaimed: folderCounts.get(f.id) ?? 0,
+                    showActions: canEdit && f.canAccess,
+                    folderActions: folderActionsProps(f.id, f.name),
+                  }))}
+                />
               ) : null}
 
               {isRoot && canEdit ? (
@@ -600,6 +606,15 @@ export default async function WorkspacePage({
                 </p>
               ) : null}
             </div>
+
+            {canEdit && currentFolder ? (
+              <WorkspaceAddTaskPanel
+                workspaceId={workspaceId}
+                folderId={currentFolder.id}
+                publicTagOptions={publicTagOptions}
+                assignableMembers={assignableMembers}
+              />
+            ) : null}
 
             <WorkspaceTaskList
               workspaceId={workspaceId}
@@ -613,6 +628,7 @@ export default async function WorkspacePage({
             />
           </section>
         </div>
-      </main>
+      </WorkspaceOnboardingProvider>
+    </main>
   );
 }
