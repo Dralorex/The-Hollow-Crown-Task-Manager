@@ -11,6 +11,7 @@ import {
 } from "@/app/actions/floating-chat";
 import { sendMessageAction } from "@/app/actions/social";
 import { MarkChatSeen } from "@/app/components/mark-chat-seen";
+import { useActivePolling } from "@/lib/use-active-polling";
 
 const STORAGE_KEY = "rowgon.chat.widget";
 
@@ -81,6 +82,7 @@ export function FloatingChatWidget({
 }) {
   const pathname = usePathname();
   const hideOnChatPage = pathname.startsWith("/app/chat");
+  const pollingActive = useActivePolling();
 
   const [ready, setReady] = useState(false);
   const [open, setOpen] = useState(false);
@@ -184,9 +186,9 @@ export function FloatingChatWidget({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, open, hideOnChatPage]);
 
-  // Soft-poll thread + list while open.
+  // Soft-poll thread + list while open (paused when tab hidden / user idle).
   useEffect(() => {
-    if (!ready || !open || hideOnChatPage) return;
+    if (!ready || !open || hideOnChatPage || !pollingActive) return;
     const id = window.setInterval(() => {
       void refreshList();
       if (view === "thread" && (thread?.id || lastGroupId)) {
@@ -202,6 +204,7 @@ export function FloatingChatWidget({
     ready,
     open,
     hideOnChatPage,
+    pollingActive,
     view,
     thread?.id,
     lastGroupId,

@@ -2,17 +2,22 @@
 
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { useActivePolling } from "@/lib/use-active-polling";
 
 /**
  * Polls /api/pulse and refreshes the RSC tree when notifications, chat,
  * workspace tasks/folders, or the viewer's membership roles change.
+ * Pauses while the tab is hidden or the user has been idle.
  */
 export function LiveRefresh({ intervalMs = 4000 }: { intervalMs?: number }) {
   const router = useRouter();
   const stampRef = useRef<string | null>(null);
   const readyRef = useRef(false);
+  const active = useActivePolling();
 
   useEffect(() => {
+    if (!active) return;
+
     let cancelled = false;
     let timer: ReturnType<typeof setTimeout> | null = null;
 
@@ -45,24 +50,13 @@ export function LiveRefresh({ intervalMs = 4000 }: { intervalMs?: number }) {
       }
     }
 
-    const onFocus = () => {
-      void tick();
-    };
-    const onVis = () => {
-      if (document.visibilityState === "visible") void tick();
-    };
-
     void tick();
-    window.addEventListener("focus", onFocus);
-    document.addEventListener("visibilitychange", onVis);
 
     return () => {
       cancelled = true;
       if (timer) clearTimeout(timer);
-      window.removeEventListener("focus", onFocus);
-      document.removeEventListener("visibilitychange", onVis);
     };
-  }, [intervalMs, router]);
+  }, [active, intervalMs, router]);
 
   return null;
 }
