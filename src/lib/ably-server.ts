@@ -77,3 +77,16 @@ export async function pushRefreshForUsers(
   if (paths.length === 0) return;
   await publishToUsers(userIds, "refresh", { paths });
 }
+
+/**
+ * Alerts inbox changed: update nav badge counts and refresh `/app/notifications`
+ * if that page is open (no polling).
+ */
+export async function pushAlertInboxForUsers(userIds: string[]) {
+  const unique = [...new Set(userIds.filter(Boolean))];
+  if (unique.length === 0) return;
+  await Promise.all([
+    pushBadgesForUsers(unique),
+    pushRefreshForUsers(unique, ["/app/notifications"]),
+  ]);
+}

@@ -1,3 +1,4 @@
+import { pushAlertInboxForUsers } from "@/lib/ably-server";
 import { prisma } from "@/lib/db";
 import { personLabel } from "@/lib/utils";
 
@@ -68,6 +69,7 @@ async function maybeOfferFriendBirthdayShare(
         }),
       },
     });
+    await pushAlertInboxForUsers([owner.id]);
     return;
   }
 
@@ -115,6 +117,7 @@ export async function handleBirthdayOnWorkspaceJoin(
         meta: JSON.stringify({ workspaceId, kind: "workspace" }),
       },
     });
+    await pushAlertInboxForUsers([userId]);
     return;
   }
 
@@ -166,6 +169,7 @@ export async function requestWorkspaceBirthday(
       }),
     },
   });
+  await pushAlertInboxForUsers([workspace.ownerId]);
 
   return { ok: true as const };
 }
@@ -239,4 +243,5 @@ export async function syncBirthdayNotifications(userId: string) {
       meta: JSON.stringify({ day: dayKey, names: list }),
     },
   });
+  await pushAlertInboxForUsers([userId]);
 }

@@ -4,6 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { nanoid } from "nanoid";
 import { requireUser } from "@/lib/auth";
+import { pushAlertInboxForUsers } from "@/lib/ably-server";
 import { handleBirthdayOnWorkspaceJoin } from "@/lib/birthday";
 import { prisma } from "@/lib/db";
 import { canManagePeople, isOwnerOnlyAction, requireMembership } from "@/lib/permissions";
@@ -125,6 +126,7 @@ export async function inviteMemberAction(
         }),
       },
     });
+    await pushAlertInboxForUsers([invitee.id]);
   }
 
   revalidatePath(`/app/w/${workspaceId}`);
@@ -335,6 +337,8 @@ export async function updateMemberRoleAction(
       meta: JSON.stringify({ workspaceId, role }),
     },
   });
+
+  await pushAlertInboxForUsers([memberUserId]);
 
   revalidatePath("/app");
   revalidatePath(`/app/w/${workspaceId}`);

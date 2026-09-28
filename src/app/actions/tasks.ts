@@ -3,7 +3,7 @@
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
 import {
-  pushBadgesForUsers,
+  pushAlertInboxForUsers,
   pushRefreshForUsers,
 } from "@/lib/ably-server";
 import { syncCalendarForTask } from "@/lib/calendar";
@@ -584,11 +584,8 @@ export async function forceUnclaimTaskAction(
 
   await syncCalendarForTask(taskId);
   await Promise.all([
-    pushBadgesForUsers([assigneeId]),
-    pushRefreshForUsers(
-      [assigneeId, user.id],
-      [`/app/w/${workspaceId}`, "/app/notifications"],
-    ),
+    pushAlertInboxForUsers([assigneeId]),
+    pushRefreshForUsers([assigneeId, user.id], [`/app/w/${workspaceId}`]),
   ]);
   revalidatePath(`/app/w/${workspaceId}`);
   revalidatePath("/app/notifications");
@@ -654,10 +651,10 @@ export async function completeTaskAction(
   await syncCalendarForTask(taskId);
   const reviewUserIds = ownersAndAdmins.map((m) => m.userId);
   await Promise.all([
-    pushBadgesForUsers(reviewUserIds),
+    pushAlertInboxForUsers(reviewUserIds),
     pushRefreshForUsers(
       [...reviewUserIds, user.id],
-      [`/app/w/${workspaceId}`, "/app/notifications"],
+      [`/app/w/${workspaceId}`],
     ),
   ]);
   revalidatePath(`/app/w/${workspaceId}`);
@@ -730,11 +727,10 @@ export async function reviewTaskAction(
   await syncCalendarForTask(taskId);
   const notifyIds = [user.id, task.assigneeId].filter(Boolean) as string[];
   await Promise.all([
-    task.assigneeId ? pushBadgesForUsers([task.assigneeId]) : Promise.resolve(),
-    pushRefreshForUsers(notifyIds, [
-      `/app/w/${workspaceId}`,
-      "/app/notifications",
-    ]),
+    task.assigneeId
+      ? pushAlertInboxForUsers([task.assigneeId])
+      : Promise.resolve(),
+    pushRefreshForUsers(notifyIds, [`/app/w/${workspaceId}`]),
   ]);
   revalidatePath(`/app/w/${workspaceId}`);
   revalidatePath("/app/notifications");
