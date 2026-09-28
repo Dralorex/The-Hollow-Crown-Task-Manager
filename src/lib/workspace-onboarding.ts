@@ -133,6 +133,7 @@ const FOLDER_CREATE_STEPS: WorkspaceOnboardingStep[] = [
   "folder-roles",
   "folder-hide",
   "folder-always",
+  "folder-accessible",
   "folder-submit",
 ];
 
@@ -282,10 +283,9 @@ export function deriveOnboardingStep(args: {
 
 export function parseStoredStep(raw: string | null): WorkspaceOnboardingStep | null {
   if (!raw) return null;
-  if (!ALL_STEPS.includes(raw as WorkspaceOnboardingStep)) return null;
-  // The Always accessible checkbox is gone; stored state lands on submit.
-  if (raw === "folder-accessible") return "folder-submit";
-  return raw as WorkspaceOnboardingStep;
+  return ALL_STEPS.includes(raw as WorkspaceOnboardingStep)
+    ? (raw as WorkspaceOnboardingStep)
+    : null;
 }
 
 export function nextRoleCreateStep(
@@ -313,7 +313,8 @@ export function nextFolderCreateStep(
   }
   if (current === "folder-roles") return "folder-hide";
   if (current === "folder-hide") return "folder-always";
-  if (current === "folder-always") return "folder-submit";
+  if (current === "folder-always") return "folder-accessible";
+  if (current === "folder-accessible") return "folder-submit";
   return current;
 }
 

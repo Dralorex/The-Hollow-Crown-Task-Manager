@@ -196,6 +196,37 @@ export function GuidedCreateFolderForm({
               </span>
             </span>
           </label>
+          <label
+            className="flex cursor-pointer items-start gap-2 rounded-lg px-1 py-1 text-xs text-[color:var(--tide-deep)]"
+            onClick={() => {
+              if (active && step === "folder-accessible")
+                advanceFrom("folder-accessible");
+            }}
+          >
+            <span
+              key={blinkKey(blink("folder-accessible"), "folder-accessible")}
+              className={`mt-0.5 inline-flex shrink-0 rounded-md p-0.5 ${
+                blink("folder-accessible") ? "animate-rowgon-blink-ring" : ""
+              }`}
+            >
+              <input
+                type="checkbox"
+                name="alwaysAccessible"
+                value="1"
+                className="mt-0"
+                onChange={() => {
+                  if (active && step === "folder-accessible")
+                    advanceFrom("folder-accessible");
+                }}
+              />
+            </span>
+            <span>
+              Always accessible
+              <span className="mt-0.5 block text-[11px] font-normal text-[color:var(--tide-deep)]/50">
+                Anyone can open this folder even when roles are set.
+              </span>
+            </span>
+          </label>
         </>
       ) : canSetAccess ? (
         // Short track: still submit roles fields as empty / unused

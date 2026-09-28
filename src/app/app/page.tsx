@@ -1,6 +1,7 @@
 import { redirect } from "next/navigation";
 import { StartHereNewWorkspace } from "@/app/components/start-here-new-workspace";
 import { WorkspaceCardMenu } from "@/app/components/workspace-card-menu";
+import { canViewArchived, isArchived } from "@/lib/archive";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import Link from "next/link";
@@ -15,7 +16,13 @@ export default async function AppHomePage() {
     orderBy: { createdAt: "desc" },
   });
 
-  const workspaceIds = memberships.map((m) => m.workspaceId);
+  const visible = memberships.filter((m) =>
+    canViewArchived(user.id, m.role, m.workspace),
+  );
+  const active = visible.filter((m) => !isArchived(m.workspace));
+  const archived = visible.filter((m) => isArchived(m.workspace));
+
+  const workspaceIds = active.map((m) => m.workspaceId);
   const allMembers =
     workspaceIds.length > 0
       ? await prisma.membership.findMany({
@@ -55,47 +62,84 @@ export default async function AppHomePage() {
     take: 5,
   });
 
-  const workspaceList = memberships.map((m, i) => {
-    const isOwner = m.role === "OWNER";
-    return (
-      <div
-        key={m.id}
-        className="tide-panel relative p-5 transition hover:-translate-y-0.5 hover:shadow-lg"
-        style={{ animationDelay: `${i * 60}ms` }}
-      >
-        <div className="flex items-start justify-between gap-2">
-          <Link href={`/app/w/${m.workspaceId}`} className="min-w-0 flex-1">
-            <div className="flex flex-wrap items-center gap-2">
-              <p className="font-[family-name:var(--font-display)] text-2xl text-[#0A3D45]">
-                {m.workspace.name}
-              </p>
-              {isOwner ? (
-                <span className="rounded-md bg-[#0A3D45]/10 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[#0A3D45]">
-                  Owner
-                </span>
-              ) : null}
-            </div>
-            <p className="mt-2 text-sm capitalize text-[#0A3D45]/60">
-              {m.role.toLowerCase()}
-            </p>
-          </Link>
-          <WorkspaceCardMenu
-            workspaceId={m.workspaceId}
-            workspaceName={m.workspace.name}
-            role={m.role}
-            members={membersByWorkspace.get(m.workspaceId) ?? []}
-          />
-        </div>
+  const showStartHere = active.length === 0 && archived.length === 0;
+
+  const workspaceList =
+    active.length === 0 ? (
+      <div className="tide-panel sm:col-span-2 lg:col-span-3 max-w-xl p-5 text-sm text-[#0A3D45]/70">
+        No active workspaces. Archived ones are listed below if you still have
+        access.
       </div>
+    ) : (
+      active.map((m, i) => {
+        const isOwner = m.role === "OWNER";
+        return (
+          <div
+            key={m.id}
+            className="tide-panel relative p-5 transition hover:-translate-y-0.5 hover:shadow-lg"
+            style={{ animationDelay: `${i * 60}ms` }}
+          >
+            <div className="flex items-start justify-between gap-2">
+              <Link href={`/app/w/${m.workspaceId}`} className="min-w-0 flex-1">
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="font-[family-name:var(--font-display)] text-2xl text-[#0A3D45]">
+                    {m.workspace.name}
+                  </p>
+                  {isOwner ? (
+                    <span className="rounded-md bg-[#0A3D45]/10 px-1.5 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-[#0A3D45]">
+                      Owner
+                    </span>
+                  ) : null}
+                </div>
+                <p className="mt-2 text-sm capitalize text-[#0A3D45]/60">
+                  {m.role.toLowerCase()}
+                </p>
+              </Link>
+              <WorkspaceCardMenu
+                workspaceId={m.workspaceId}
+                workspaceName={m.workspace.name}
+                role={m.role}
+                members={membersByWorkspace.get(m.workspaceId) ?? []}
+              />
+            </div>
+          </div>
+        );
+      })
     );
-  });
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-10">
       <StartHereNewWorkspace
-        showStartHere={memberships.length === 0}
+        showStartHere={showStartHere}
         workspaceList={workspaceList}
       />
+
+      {archived.length > 0 ? (
+        <section className="mt-12">
+          <h2 className="font-[family-name:var(--font-display)] text-2xl text-[#0A3D45]">
+            Archived
+          </h2>
+          <p className="mt-1 text-sm text-[#0A3D45]/60">
+            Soft-deleted workspaces. History is kept; Admin+ can restore.
+          </p>
+          <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {archived.map((m) => (
+              <Link
+                key={m.id}
+                href={`/app/w/${m.workspaceId}`}
+                className="tide-panel block border border-[#0A3D45]/10 bg-white/50 p-5 opacity-90 transition hover:opacity-100"
+              >
+                <p className="font-[family-name:var(--font-display)] text-xl text-[#0A3D45]">
+                  {m.workspace.name}
+                </p>
+                <p className="mt-2 text-xs uppercase tracking-wide text-[#0A3D45]/50">
+                  Archived · {m.role.toLowerCase()}
+                </p>
+              </Link>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       {notifications.length > 0 ? (
         <section className="mt-12">

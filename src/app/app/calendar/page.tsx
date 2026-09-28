@@ -160,38 +160,54 @@ export default async function CalendarPage({
       startAt: event.startAt?.toISOString() ?? null,
       endAt: event.endAt?.toISOString() ?? null,
       sourceLabel: "Personal event",
+      canMove: true,
     };
   }
 
   const events: CalendarBoardEvent[] = [
     ...personalEvents.map(mapPersonalEvent),
-    ...workspaceEvents.map((event) => ({
-      id: `workspace:${event.id}`,
-      recordId: event.id,
-      kind: "workspace" as const,
-      title: event.title,
-      description: event.description,
-      date: event.date.toISOString(),
-      allDay: event.allDay,
-      startAt: event.startAt?.toISOString() ?? null,
-      endAt: event.endAt?.toISOString() ?? null,
-      sourceLabel: `${event.workspace?.name ?? "Workspace"} · added by ${personLabel(event.createdBy)}`,
-    })),
-    ...taskEvents.map((event) => ({
-      id: `task:${event.id}`,
-      recordId: event.id,
-      kind: "task" as const,
-      title: event.title,
-      description: event.task.description,
-      date: event.dueDate.toISOString(),
-      allDay: true,
-      startAt: null,
-      endAt: null,
-      sourceLabel: event.task.assignee
-        ? `${event.task.workspace.name} · ${event.task.folder.name} · ${personLabel(event.task.assignee)}`
-        : `${event.task.workspace.name} · ${event.task.folder.name}`,
-      href: `/app/w/${event.task.workspaceId}?folder=${event.task.folderId}`,
-    })),
+    ...workspaceEvents.map((event) => {
+      const membership = memberships.find(
+        (m) => m.workspaceId === event.workspaceId,
+      );
+      const canEditWs = membership ? canEditContent(membership.role) : false;
+      return {
+        id: `workspace:${event.id}`,
+        recordId: event.id,
+        kind: "workspace" as const,
+        title: event.title,
+        description: event.description,
+        date: event.date.toISOString(),
+        allDay: event.allDay,
+        startAt: event.startAt?.toISOString() ?? null,
+        endAt: event.endAt?.toISOString() ?? null,
+        sourceLabel: `${event.workspace?.name ?? "Workspace"} · added by ${personLabel(event.createdBy)}`,
+        canMove: canEditWs,
+      };
+    }),
+    ...taskEvents.map((event) => {
+      const membership = memberships.find(
+        (m) => m.workspaceId === event.task.workspaceId,
+      );
+      const canEditWs = membership ? canEditContent(membership.role) : false;
+      const isAssignee = event.task.assigneeId === user.id;
+      return {
+        id: `task:${event.id}`,
+        recordId: event.id,
+        kind: "task" as const,
+        title: event.title,
+        description: event.task.description,
+        date: event.dueDate.toISOString(),
+        allDay: true,
+        startAt: null,
+        endAt: null,
+        sourceLabel: event.task.assignee
+          ? `${event.task.workspace.name} · ${event.task.folder.name} · ${personLabel(event.task.assignee)}`
+          : `${event.task.workspace.name} · ${event.task.folder.name}`,
+        href: `/app/w/${event.task.workspaceId}?folder=${event.task.folderId}`,
+        canMove: isAssignee || canEditWs,
+      };
+    }),
   ];
 
   const birthdayEvents = new Map<string, CalendarBoardEvent>();

@@ -9,9 +9,17 @@ import {
   pushRefreshForUsers,
 } from "@/lib/ably-server";
 import { handleBirthdayOnFriendship } from "@/lib/birthday";
+import { derivePresence } from "@/lib/chat-presence";
+import { publishChatPresence } from "@/lib/chat-presence-bus";
 import { prisma } from "@/lib/db";
-import { canCreateGroups, requireMembership } from "@/lib/permissions";
+import { OPEN_THREAD_MS, parseMentions } from "@/lib/mentions";
+import {
+  canCreateGroups,
+  canManagePeople,
+  requireMembership,
+} from "@/lib/permissions";
 import { normalizeUsername, personLabel } from "@/lib/utils";
+import type { Role } from "@/generated/prisma/client";
 import type { ActionResult } from "@/app/actions/auth";
 
 export async function sendFriendRequestAction(
@@ -543,14 +551,17 @@ export async function sendMessageAction(
 
   const member = await prisma.chatMember.findUnique({
     where: { groupId_userId: { groupId, userId: user.id } },
+    include: {
+      group: {
+        include: {
+          members: { include: { user: true } },
+        },
+      },
+    },
   });
   if (!member) return { ok: false, error: "You’re not in this chat." };
 
-  const group = await prisma.chatGroup.findUnique({
-    where: { id: groupId },
-    include: { members: true },
-  });
-  if (!group) return { ok: false, error: "Chat not found." };
+  const group = member.group;
   if (group.closedAt) {
     return {
       ok: false,
@@ -558,47 +569,166 @@ export async function sendMessageAction(
     };
   }
 
-  await prisma.message.create({
-    data: { groupId, senderId: user.id, body },
+  const nowDate = new Date();
+  await prisma.chatMember.update({
+    where: { id: member.id },
+    data: {
+      typingAt: null,
+      lastSeenAt: nowDate,
+      lastActiveAt: nowDate,
+    },
   });
 
-  // Only skip notifications for members with this exact thread open right now.
-  const activeCutoff = new Date(Date.now() - 25_000);
-  const recipients = group.members
-    .filter(
-      (m) =>
-        m.userId !== user.id &&
-        !(m.lastActiveAt && m.lastActiveAt >= activeCutoff),
-    )
-    .map((m) => m.userId);
+  const chatMembers = group.members;
+  const memberByUsername = new Map(
+    chatMembers.map((m) => [m.user.username.toLowerCase(), m]),
+  );
 
-  if (recipients.length > 0) {
-    const preview = body.slice(0, 140);
-    const title = group.isDirect
-      ? `Message from ${personLabel(user)}`
-      : `${group.name}: ${personLabel(user)}`;
-    await prisma.notification.createMany({
-      data: recipients.map((userId) => ({
-        userId,
-        type: "CHAT_MESSAGE",
-        title,
-        body: preview,
-        meta: JSON.stringify({ groupId, fromUserId: user.id }),
-      })),
+  const parsed = parseMentions(body);
+  const wantsEveryone = parsed.some((p) => p.kind === "everyone");
+  const roleMentions = parsed.filter(
+    (p): p is { kind: "role"; roleName: Role } => p.kind === "role",
+  );
+  const userMentions = parsed.filter(
+    (p): p is { kind: "user"; username: string } => p.kind === "user",
+  );
+
+  let senderWorkspaceRole: Role | null = null;
+  if (group.workspaceId) {
+    const wsMembership = await prisma.membership.findUnique({
+      where: {
+        workspaceId_userId: { workspaceId: group.workspaceId, userId: user.id },
+      },
     });
+    senderWorkspaceRole = wsMembership?.role ?? null;
   }
 
-  const memberIds = group.members.map((m) => m.userId);
+  const canUseElevatedMentions = group.workspaceId
+    ? Boolean(senderWorkspaceRole && canManagePeople(senderWorkspaceRole))
+    : true;
+
+  if ((wantsEveryone || roleMentions.length > 0) && !canUseElevatedMentions) {
+    return {
+      ok: false,
+      error: "Only Admin+ can use @everyone or @role in workspace chats.",
+    };
+  }
+
+  if (roleMentions.length > 0 && !group.workspaceId) {
+    return { ok: false, error: "@role only works in workspace group chats." };
+  }
+
+  if (wantsEveryone && group.isDirect) {
+    return { ok: false, error: "@everyone isn’t used in 1:1 DMs." };
+  }
+
+  const mentionedUserIds = new Set<string>();
+
+  for (const mention of userMentions) {
+    const target = memberByUsername.get(mention.username);
+    if (target && target.userId !== user.id) {
+      mentionedUserIds.add(target.userId);
+    }
+  }
+
+  if (wantsEveryone) {
+    for (const m of chatMembers) {
+      if (m.userId !== user.id) mentionedUserIds.add(m.userId);
+    }
+  }
+
+  if (roleMentions.length > 0 && group.workspaceId) {
+    const roleNames = roleMentions.map((r) => r.roleName);
+    const roleMembers = await prisma.membership.findMany({
+      where: {
+        workspaceId: group.workspaceId,
+        role: { in: roleNames },
+        userId: { in: chatMembers.map((m) => m.userId) },
+      },
+    });
+    for (const rm of roleMembers) {
+      if (rm.userId !== user.id) mentionedUserIds.add(rm.userId);
+    }
+  }
+
+  const message = await prisma.message.create({
+    data: {
+      groupId,
+      senderId: user.id,
+      body,
+      mentions: {
+        create: [
+          ...userMentions
+            .map((m) => {
+              const target = memberByUsername.get(m.username);
+              if (!target) return null;
+              return {
+                kind: "user",
+                userId: target.userId,
+              };
+            })
+            .filter((m): m is { kind: string; userId: string } => Boolean(m)),
+          ...(wantsEveryone ? [{ kind: "everyone" as const }] : []),
+          ...roleMentions.map((r) => ({
+            kind: "role" as const,
+            roleName: r.roleName,
+          })),
+        ],
+      },
+    },
+  });
+
+  const now = Date.now();
+  const preview = body.length > 120 ? `${body.slice(0, 117)}…` : body;
+  const titlePrefix = group.isDirect
+    ? `Message from ${personLabel(user)}`
+    : `${group.name}: ${personLabel(user)}`;
+
+  const notified: string[] = [];
+  for (const m of chatMembers) {
+    if (m.userId === user.id) continue;
+
+    const mentioned = mentionedUserIds.has(m.userId);
+    const mode = m.notifyMode;
+    if (mode === "MUTE") continue;
+    if (mode === "MENTIONS" && !mentioned) continue;
+
+    const lastOpen = m.lastSeenAt ?? m.lastActiveAt;
+    if (lastOpen && now - lastOpen.getTime() < OPEN_THREAD_MS) {
+      continue;
+    }
+
+    await prisma.notification.create({
+      data: {
+        userId: m.userId,
+        type: mentioned ? "CHAT_MENTION" : "CHAT_MESSAGE",
+        title: mentioned ? "Mentioned in chat" : titlePrefix,
+        body: mentioned
+          ? `${personLabel(user)} in ${group.name}: ${preview}`
+          : preview,
+        meta: JSON.stringify({
+          groupId,
+          messageId: message.id,
+          fromUserId: user.id,
+          mentioned,
+        }),
+      },
+    });
+    notified.push(m.userId);
+  }
+
   await Promise.all([
-    pushRefreshForUsers(memberIds, ["/app/chat"]),
-    recipients.length > 0
-      ? pushBadgesForUsers(recipients)
-      : Promise.resolve(),
+    pushRefreshForUsers(
+      chatMembers.map((m) => m.userId),
+      ["/app/chat"],
+    ),
+    notified.length > 0 ? pushBadgesForUsers(notified) : Promise.resolve(),
   ]);
 
   revalidatePath("/app/chat");
   revalidatePath("/app/notifications");
   revalidatePath("/app", "layout");
+  publishChatPresence(groupId);
   return { ok: true };
 }
 
@@ -875,15 +1005,16 @@ export async function markChatNotificationsReadAction(
   });
   if (!member) return;
 
+  const seenAt = new Date();
   await prisma.chatMember.update({
     where: { id: member.id },
-    data: { lastActiveAt: new Date() },
+    data: { lastActiveAt: seenAt, lastSeenAt: seenAt },
   });
 
   await prisma.notification.updateMany({
     where: {
       userId: user.id,
-      type: "CHAT_MESSAGE",
+      type: { in: ["CHAT_MESSAGE", "CHAT_MENTION"] },
       read: false,
       meta: { contains: groupId },
     },
@@ -904,10 +1035,12 @@ export async function markChatNotificationsReadAction(
 export async function pulseChatPresenceAction(groupId: string): Promise<void> {
   const user = await requireUser();
   if (!groupId) return;
+  const now = new Date();
   await prisma.chatMember.updateMany({
     where: { groupId, userId: user.id },
-    data: { lastActiveAt: new Date() },
+    data: { lastActiveAt: now, lastSeenAt: now },
   });
+  publishChatPresence(groupId);
 }
 
 /** Clear presence when leaving a thread so list/hub tabs still get notifications. */
@@ -918,6 +1051,122 @@ export async function clearChatPresenceAction(groupId: string): Promise<void> {
     where: { groupId, userId: user.id },
     data: { lastActiveAt: null },
   });
+  publishChatPresence(groupId);
+}
+
+export async function setChatNotifyModeAction(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const user = await requireUser();
+  const groupId = String(formData.get("groupId") ?? "");
+  const mode = String(formData.get("mode") ?? "") as "ALL" | "MENTIONS" | "MUTE";
+  if (!["ALL", "MENTIONS", "MUTE"].includes(mode)) {
+    return { ok: false, error: "Pick a valid notification mode." };
+  }
+
+  const member = await prisma.chatMember.findUnique({
+    where: { groupId_userId: { groupId, userId: user.id } },
+  });
+  if (!member) return { ok: false, error: "You’re not in this chat." };
+
+  await prisma.chatMember.update({
+    where: { id: member.id },
+    data: { notifyMode: mode },
+  });
+
+  revalidatePath("/app/chat");
+  return { ok: true };
+}
+
+export async function touchChatSeenAction(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const user = await requireUser();
+  const groupId = String(formData.get("groupId") ?? "");
+  const member = await prisma.chatMember.findUnique({
+    where: { groupId_userId: { groupId, userId: user.id } },
+  });
+  if (!member) return { ok: false, error: "You’re not in this chat." };
+
+  const now = new Date();
+  await prisma.chatMember.update({
+    where: { id: member.id },
+    data: { lastSeenAt: now, lastActiveAt: now },
+  });
+
+  await prisma.notification.updateMany({
+    where: {
+      userId: user.id,
+      read: false,
+      type: { in: ["CHAT_MESSAGE", "CHAT_MENTION"] },
+      meta: { contains: groupId },
+    },
+    data: { read: true },
+  });
+
+  await pushBadgesForUsers([user.id]);
+
+  publishChatPresence(groupId);
+  revalidatePath("/app", "layout");
+  return { ok: true };
+}
+
+export async function setTypingAction(groupId: string): Promise<ActionResult> {
+  const user = await requireUser();
+  const member = await prisma.chatMember.findUnique({
+    where: { groupId_userId: { groupId, userId: user.id } },
+  });
+  if (!member) return { ok: false, error: "You’re not in this chat." };
+
+  const now = new Date();
+  await prisma.chatMember.update({
+    where: { id: member.id },
+    data: { typingAt: now, lastSeenAt: now, lastActiveAt: now },
+  });
+  publishChatPresence(groupId);
+  return { ok: true };
+}
+
+export async function clearTypingAction(groupId: string): Promise<ActionResult> {
+  const user = await requireUser();
+  const member = await prisma.chatMember.findUnique({
+    where: { groupId_userId: { groupId, userId: user.id } },
+  });
+  if (!member) return { ok: false, error: "You’re not in this chat." };
+
+  await prisma.chatMember.update({
+    where: { id: member.id },
+    data: { typingAt: null },
+  });
+  publishChatPresence(groupId);
+  return { ok: true };
+}
+
+export async function fetchChatPresence(groupId: string) {
+  const user = await requireUser();
+  const member = await prisma.chatMember.findUnique({
+    where: { groupId_userId: { groupId, userId: user.id } },
+  });
+  if (!member) return { ok: false as const, error: "You’re not in this chat." };
+
+  const members = await prisma.chatMember.findMany({
+    where: { groupId },
+    include: { user: { select: { id: true, username: true } } },
+  });
+
+  const presence = derivePresence(
+    members.map((m) => ({
+      userId: m.userId,
+      username: m.user.username,
+      lastSeenAt: m.lastSeenAt ?? m.lastActiveAt,
+      typingAt: m.typingAt,
+    })),
+    user.id,
+  );
+
+  return { ok: true as const, presence, selfId: user.id };
 }
 
 export async function updateFriendProfileAction(
