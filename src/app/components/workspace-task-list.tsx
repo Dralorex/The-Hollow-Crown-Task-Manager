@@ -10,6 +10,7 @@ import type {
 } from "@/app/components/workspace-task-row";
 import { TaskStatusSections } from "@/app/components/task-status-sections";
 import type { UrgencyChipPrefs } from "@/app/components/task-ui";
+import type { FolderMoveOption } from "@/lib/folder-tree";
 
 export function WorkspaceTaskList({
   workspaceId,
@@ -21,6 +22,7 @@ export function WorkspaceTaskList({
   privateTagOptions = [],
   urgencyChips,
   assignableMembers = [],
+  moveOptions = [],
   emptyMessage,
 }: {
   workspaceId: string;
@@ -32,6 +34,7 @@ export function WorkspaceTaskList({
   privateTagOptions?: string[];
   urgencyChips?: UrgencyChipPrefs;
   assignableMembers?: AssignableMember[];
+  moveOptions?: FolderMoveOption[];
   emptyMessage?: string;
 }) {
   const { sortMode, setSortMode, modes, sorted } = useChipAwareTaskSort(
@@ -57,6 +60,7 @@ export function WorkspaceTaskList({
         privateTagOptions={privateTagOptions}
         urgencyChips={urgencyChips}
         assignableMembers={assignableMembers}
+        moveOptions={moveOptions}
         emptyMessage={emptyMessage}
       />
     </div>

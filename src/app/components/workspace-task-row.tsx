@@ -24,12 +24,14 @@ import {
   completeTaskAction,
   deleteTaskAction,
   forceUnclaimTaskAction,
+  moveTaskToFolderAction,
   reviewTaskAction,
   toggleChecklistItemForm,
   updateTaskAction,
 } from "@/app/actions/tasks";
 import { personLabel } from "@/lib/utils";
 import { confirmDelete } from "@/lib/confirm";
+import type { FolderMoveOption } from "@/lib/folder-tree";
 import type { TaskPriority, TaskStatus } from "@/generated/prisma/client";
 import { PRIORITY_LABELS, TASK_PRIORITIES } from "@/lib/urgency";
 
@@ -82,20 +84,25 @@ function TaskEditorMenu({
   workspaceId,
   task,
   highlightMenu = false,
+  moveOptions = [],
 }: {
   workspaceId: string;
   task: WorkspaceTaskData;
   /** Blink the ⋮ during onboarding until the user opens it. */
   highlightMenu?: boolean;
+  moveOptions?: FolderMoveOption[];
 }) {
   const [open, setOpen] = useState(false);
-  const [panel, setPanel] = useState<"menu" | "edit" | "forceUnclaim">("menu");
+  const [panel, setPanel] = useState<"menu" | "edit" | "forceUnclaim" | "move">(
+    "menu",
+  );
   const [name, setName] = useState(task.name);
   const [description, setDescription] = useState(task.description);
   const [priority, setPriority] = useState<TaskPriority>(task.priority);
   const [dueDate, setDueDate] = useState(dueInputValue(task.dueDate));
   const [reason, setReason] = useState("");
   const [workNote, setWorkNote] = useState("");
+  const [moveFolderId, setMoveFolderId] = useState(task.folderId);
   const [error, setError] = useState<string | null>(null);
   const [pending, startTransition] = useTransition();
   const router = useRouter();
@@ -106,7 +113,8 @@ function TaskEditorMenu({
     setDescription(task.description);
     setPriority(task.priority);
     setDueDate(dueInputValue(task.dueDate));
-  }, [task.name, task.description, task.priority, task.dueDate]);
+    setMoveFolderId(task.folderId);
+  }, [task.name, task.description, task.priority, task.dueDate, task.folderId]);
 
   function close() {
     setOpen(false);
@@ -114,6 +122,7 @@ function TaskEditorMenu({
     setError(null);
     setReason("");
     setWorkNote("");
+    setMoveFolderId(task.folderId);
   }
 
   function saveEdit(e: React.FormEvent) {
@@ -173,6 +182,26 @@ function TaskEditorMenu({
     });
   }
 
+  function saveMove(e: React.FormEvent) {
+    e.preventDefault();
+    setError(null);
+    startTransition(async () => {
+      const fd = new FormData();
+      fd.set("workspaceId", workspaceId);
+      fd.set("taskId", task.id);
+      fd.set("folderId", moveFolderId);
+      const result = await moveTaskToFolderAction(null, fd);
+      if (result && !result.ok) {
+        setError(result.error);
+        return;
+      }
+      close();
+      router.refresh();
+    });
+  }
+
+  const taskMoveChoices = moveOptions.filter((opt) => opt.id !== null);
+
   return (
     <MenuSurface
       open={open}
@@ -209,6 +238,19 @@ function TaskEditorMenu({
           >
             Rename / modify
           </button>
+          {taskMoveChoices.length > 0 ? (
+            <button
+              type="button"
+              role="menuitem"
+              className={menuItemClass()}
+              onClick={() => {
+                setMoveFolderId(task.folderId);
+                setPanel("move");
+              }}
+            >
+              Move…
+            </button>
+          ) : null}
           {task.assigneeId && task.status !== "DONE" ? (
             <button
               type="button"
@@ -232,6 +274,45 @@ function TaskEditorMenu({
             <p className="px-3 py-2 text-xs text-[#9b2f22]">{error}</p>
           ) : null}
         </>
+      ) : null}
+
+      {panel === "move" ? (
+        <form className="space-y-2 px-3 py-2" onSubmit={saveMove}>
+          <p className="text-xs font-semibold text-[#0A3D45]">Move to folder</p>
+          <select
+            value={moveFolderId}
+            onChange={(e) => setMoveFolderId(e.target.value)}
+            className="tide-input w-full text-sm"
+            aria-label="Destination folder"
+            required
+          >
+            {taskMoveChoices.map((opt) => (
+              <option key={opt.id!} value={opt.id!}>
+                {opt.label}
+              </option>
+            ))}
+          </select>
+          {error ? <p className="text-xs text-[#9b2f22]">{error}</p> : null}
+          <div className="flex gap-2 pt-1">
+            <button
+              type="submit"
+              disabled={pending || !moveFolderId}
+              className="tide-btn-secondary !px-2.5 !py-1 text-xs disabled:opacity-50"
+            >
+              {pending ? "Moving…" : "Move"}
+            </button>
+            <button
+              type="button"
+              className="text-xs text-[#0A3D45]/55"
+              onClick={() => {
+                setError(null);
+                setPanel("menu");
+              }}
+            >
+              Back
+            </button>
+          </div>
+        </form>
       ) : null}
 
       {panel === "edit" ? (
@@ -419,6 +500,7 @@ export function WorkspaceTaskRow({
   privateTagOptions = [],
   urgencyChips,
   assignableMembers = [],
+  moveOptions = [],
 }: {
   workspaceId: string;
   task: WorkspaceTaskData;
@@ -429,6 +511,7 @@ export function WorkspaceTaskRow({
   privateTagOptions?: string[];
   urgencyChips?: UrgencyChipPrefs;
   assignableMembers?: AssignableMember[];
+  moveOptions?: FolderMoveOption[];
 }) {
   const isClaimed = Boolean(task.assigneeId);
   const isOpenAssigned = task.status === "OPEN" && Boolean(task.assigneeId);
@@ -565,6 +648,7 @@ export function WorkspaceTaskRow({
                   workspaceId={workspaceId}
                   task={task}
                   highlightMenu={highlightTaskMenu}
+                  moveOptions={moveOptions}
                 />
               </span>
             ) : null}

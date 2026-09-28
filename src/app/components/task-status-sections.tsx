@@ -7,6 +7,7 @@ import {
   type WorkspaceTaskData,
 } from "@/app/components/workspace-task-row";
 import type { UrgencyChipPrefs } from "@/app/components/task-ui";
+import type { FolderMoveOption } from "@/lib/folder-tree";
 import type { TaskStatus } from "@/generated/prisma/client";
 
 type SectionId = "unclaimed" | "claimed" | "under_review" | "completed";
@@ -127,6 +128,7 @@ export function TaskStatusSections({
   privateTagOptions = [],
   urgencyChips,
   assignableMembers = [],
+  moveOptions = [],
   emptyMessage,
 }: {
   workspaceId: string;
@@ -139,6 +141,7 @@ export function TaskStatusSections({
   privateTagOptions?: string[];
   urgencyChips?: UrgencyChipPrefs;
   assignableMembers?: AssignableMember[];
+  moveOptions?: FolderMoveOption[];
   emptyMessage?: string;
 }) {
   const grouped: Record<SectionId, WorkspaceTaskData[]> = {
@@ -188,6 +191,7 @@ export function TaskStatusSections({
                   privateTagOptions={privateTagOptions}
                   urgencyChips={urgencyChips}
                   assignableMembers={assignableMembers}
+                  moveOptions={moveOptions}
                 />
               ))
             )}
