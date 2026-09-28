@@ -34,6 +34,27 @@ import { compareTasksByUrgency } from "@/lib/urgency";
 import { personLabel, searchRelevance } from "@/lib/utils";
 import { parseTagNames } from "@/lib/tags";
 import { TagFilterField } from "@/app/components/tag-filter-field";
+import { WorkspacePulseStrip } from "@/app/components/workspace-pulse-strip";
+import {
+  ArchiveFolderControls,
+  ArchiveWorkspacePanel,
+} from "@/app/components/archive-controls";
+import { canViewArchived, isArchived } from "@/lib/archive";
+import { syncDueRecurrences } from "@/lib/recurrence";
+
+const taskInclude = {
+  assignee: true,
+  folder: true,
+  lastUnclaimedBy: true,
+  lastSentBackBy: true,
+  tags: { include: { tag: true } },
+  checklistItems: { orderBy: { sortOrder: "asc" as const } },
+  activities: {
+    orderBy: { createdAt: "desc" as const },
+    take: 40,
+    include: { actor: { select: { username: true, nickname: true } } },
+  },
+};
 
 export default async function WorkspacePage({
   params,
@@ -45,6 +66,7 @@ export default async function WorkspacePage({
     q?: string;
     tag?: string;
     setup?: string;
+    inbox?: string;
   }>;
 }) {
   const user = await getCurrentUser();
@@ -53,17 +75,27 @@ export default async function WorkspacePage({
   const { workspaceId } = await params;
   const sp = await searchParams;
   const showSetup = sp.setup === "1";
+  const inbox =
+    sp.inbox === "mine" ? "mine" : sp.inbox === "review" ? "review" : null;
 
   const membership = await prisma.membership.findUnique({
     where: { workspaceId_userId: { workspaceId, userId: user.id } },
   });
   if (!membership) redirect("/app");
 
+  await syncDueRecurrences(workspaceId);
+
   const workspace = await prisma.workspace.findUniqueOrThrow({
     where: { id: workspaceId },
   });
 
-  const [folderRecords, userRoleIds, workspaceRoles] = await Promise.all([
+  if (!canViewArchived(user.id, membership.role, workspace)) {
+    redirect("/app");
+  }
+
+  const workspaceArchived = isArchived(workspace);
+
+  const [folderRecordsAll, userRoleIds, workspaceRoles] = await Promise.all([
     prisma.folder.findMany({
       where: { workspaceId },
       orderBy: { name: "asc" },
@@ -84,6 +116,10 @@ export default async function WorkspacePage({
     }),
   ]);
 
+  const folderRecords = folderRecordsAll.filter((f) =>
+    canViewArchived(user.id, membership.role, f),
+  );
+
   const folderAccessRows: FolderAccessRow[] = folderRecords.map((f) => ({
     id: f.id,
     parentId: f.parentId,
@@ -91,6 +127,7 @@ export default async function WorkspacePage({
     requiredRoleIds: f.requiredRoles.map((r) => r.roleId),
     hideFromUnauthorized: f.hideFromUnauthorized,
     alwaysVisible: f.alwaysVisible,
+    alwaysAccessible: f.alwaysAccessible,
     roleHidesFolder: f.requiredRoles.some((r) => r.role.hideFolders),
   }));
   const foldersById = new Map(folderAccessRows.map((f) => [f.id, f]));
@@ -105,6 +142,7 @@ export default async function WorkspacePage({
   );
 
   const folders = folderRecords;
+  const activeFolders = folders.filter((f) => !isArchived(f));
   const roleOptions = workspaceRoles.map((r) => ({ id: r.id, name: r.name }));
 
   const taskCountRows = await prisma.task.groupBy({
@@ -145,12 +183,12 @@ export default async function WorkspacePage({
     directTotalCounts,
   );
 
-  // All Tasks = no folder query param. Same status sections as folders.
-  const isRoot = !sp.folder;
-  const currentFolderId = sp.folder ?? null;
+  const isRoot = !inbox && !sp.folder;
+  const currentFolderId = inbox ? null : (sp.folder ?? null);
   const currentFolder = currentFolderId
-    ? folders.find((f) => f.id === currentFolderId) ?? null
+    ? (folders.find((f) => f.id === currentFolderId) ?? null)
     : null;
+  const folderArchived = Boolean(currentFolder && isArchived(currentFolder));
 
   if (currentFolderId && !currentFolder) {
     redirect(`/app/w/${workspaceId}`);
@@ -163,24 +201,36 @@ export default async function WorkspacePage({
     redirect(`/app/w/${workspaceId}`);
   }
 
-  const childFolders = visibleFolders.filter(
-    (f) => f.parentId === (currentFolder?.id ?? null),
-  );
+  const childFolders = inbox
+    ? []
+    : visibleFolders.filter((f) => {
+        if (f.parentId !== (currentFolder?.id ?? null)) return false;
+        const record = folders.find((row) => row.id === f.id);
+        if (!record) return false;
+        if (!currentFolder || !isArchived(currentFolder)) {
+          return !isArchived(record);
+        }
+        return true;
+      });
 
   const parentFolder = currentFolder?.parentId
-    ? folders.find((f) => f.id === currentFolder.parentId) ?? null
+    ? (folders.find((f) => f.id === currentFolder.parentId) ?? null)
     : null;
 
-  const backHref = currentFolder
-    ? parentFolder
-      ? `/app/w/${workspaceId}?folder=${parentFolder.id}`
-      : `/app/w/${workspaceId}`
-    : null;
-  const backLabel = currentFolder
-    ? parentFolder
-      ? parentFolder.name
-      : "All Tasks"
-    : null;
+  const backHref = inbox
+    ? `/app/w/${workspaceId}`
+    : currentFolder
+      ? parentFolder
+        ? `/app/w/${workspaceId}?folder=${parentFolder.id}`
+        : `/app/w/${workspaceId}`
+      : null;
+  const backLabel = inbox
+    ? "All Tasks"
+    : currentFolder
+      ? parentFolder
+        ? parentFolder.name
+        : "All Tasks"
+      : null;
 
   const q = sp.q?.trim() ?? "";
   const tagFilterRaw = sp.tag?.trim() ?? "";
@@ -194,30 +244,49 @@ export default async function WorkspacePage({
 
   // Folder browse stays local; tag filter includes the folder subtree so
   // tags from lower paths remain useful.
-  const taskFolderIds = isRoot
-    ? [...accessibleFolderIds]
-    : tagFilters.length > 0 && currentFolder
-      ? tagScopeFolderIds
-      : currentFolder
-        ? [currentFolder.id]
-        : [];
+  const inboxFolderFilter = canManagePeople(membership.role)
+    ? {}
+    : { folderId: { in: [...accessibleFolderIds] } };
+
+  const taskFolderIds = inbox
+    ? []
+    : isRoot
+      ? [...accessibleFolderIds]
+      : tagFilters.length > 0 && currentFolder
+        ? tagScopeFolderIds
+        : currentFolder
+          ? [currentFolder.id]
+          : [];
 
   let tasks =
-    taskFolderIds.length === 0
-      ? []
-      : await prisma.task.findMany({
+    inbox === "mine"
+      ? await prisma.task.findMany({
           where: {
             workspaceId,
-            folderId: { in: taskFolderIds },
+            assigneeId: user.id,
+            status: { in: ["OPEN", "CLAIMED", "IN_REVIEW"] },
+            ...inboxFolderFilter,
           },
-          include: {
-            assignee: true,
-            folder: true,
-            lastUnclaimedBy: true,
-            lastSentBackBy: true,
-            tags: { include: { tag: true } },
-          },
-        });
+          include: taskInclude,
+        })
+      : inbox === "review"
+        ? await prisma.task.findMany({
+            where: {
+              workspaceId,
+              status: "IN_REVIEW",
+              ...inboxFolderFilter,
+            },
+            include: taskInclude,
+          })
+        : taskFolderIds.length === 0
+          ? []
+          : await prisma.task.findMany({
+              where: {
+                workspaceId,
+                folderId: { in: taskFolderIds },
+              },
+              include: taskInclude,
+            });
 
   const [publicTagsInScope, privateTagsForUser] = await Promise.all([
     tagScopeFolderIds.length === 0
@@ -280,9 +349,16 @@ export default async function WorkspacePage({
       .map(({ task }) => task);
   }
 
-  const canEdit = canEditContent(membership.role);
-  const canInvite = canManagePeople(membership.role);
+  const canEditBase = canEditContent(membership.role);
+  const canEdit =
+    canEditBase &&
+    !workspaceArchived &&
+    !folderArchived &&
+    (!currentFolder || accessibleFolderIds.has(currentFolder.id));
+  const canInvite = canManagePeople(membership.role) && !workspaceArchived;
+  const canArchive = canManagePeople(membership.role);
   const canManageRoles = canManagePeople(membership.role);
+  const showPulse = canManagePeople(membership.role);
 
   const roleActivity = await getRoleActivityUnread(
     user.id,
@@ -362,6 +438,11 @@ export default async function WorkspacePage({
     requestPending: pendingFriendIds.has(m.userId),
   }));
 
+  const archiveMembers = workspaceMembers.map((m) => ({
+    id: m.user.id,
+    username: m.user.username,
+  }));
+
   const assignableMembers = (
     currentFolder
       ? workspaceMembers.filter((m) =>
@@ -378,13 +459,58 @@ export default async function WorkspacePage({
     username: m.user.username,
   }));
 
-  const workspaceTaskCount = await prisma.task.count({
-    where: { workspaceId },
+  const allWorkspaceTasks = await prisma.task.findMany({
+    where: {
+      workspaceId,
+      ...(canManagePeople(membership.role)
+        ? {}
+        : { folderId: { in: [...accessibleFolderIds] } }),
+    },
+    select: {
+      id: true,
+      status: true,
+      dueDate: true,
+      assigneeId: true,
+      folderId: true,
+    },
   });
 
-  const hasFolder = visibleFolders.length > 0;
-  const hasTask = workspaceTaskCount > 0;
+  const now = new Date();
+  const counts = showPulse
+    ? {
+        open: allWorkspaceTasks.filter((t) => t.status === "OPEN").length,
+        claimed: allWorkspaceTasks.filter((t) => t.status === "CLAIMED").length,
+        inReview: allWorkspaceTasks.filter((t) => t.status === "IN_REVIEW")
+          .length,
+        overdue: allWorkspaceTasks.filter(
+          (t) => t.dueDate && t.dueDate < now && t.status !== "DONE",
+        ).length,
+        done: allWorkspaceTasks.filter((t) => t.status === "DONE").length,
+      }
+    : null;
+
+  const myClaimedCount = allWorkspaceTasks.filter(
+    (t) =>
+      t.assigneeId === user.id &&
+      (t.status === "CLAIMED" || t.status === "OPEN"),
+  ).length;
+  const needsReviewCount = allWorkspaceTasks.filter(
+    (t) => t.status === "IN_REVIEW",
+  ).length;
+
+  const savedTemplates = await prisma.folderTemplate.findMany({
+    where: { workspaceId },
+    orderBy: { name: "asc" },
+    select: { id: true, name: true, treeJson: true },
+  });
+
+  const taskCount = allWorkspaceTasks.length;
+  const hasFolder = activeFolders.length > 0;
+  const hasTask = taskCount > 0;
   const hasInvite = pendingInvites.length > 0 || workspaceMembers.length > 1;
+
+  const templateParentFolder =
+    currentFolder && !isArchived(currentFolder) ? currentFolder : null;
 
   function folderActionsProps(folderId: string, folderName: string) {
     const row = foldersById.get(folderId);
@@ -397,6 +523,7 @@ export default async function WorkspacePage({
       requiredRoleIds: row?.requiredRoleIds ?? [],
       hideFromUnauthorized: row?.hideFromUnauthorized ?? false,
       alwaysVisible: row?.alwaysVisible ?? false,
+      alwaysAccessible: row?.alwaysAccessible ?? false,
     };
   }
 
@@ -405,6 +532,34 @@ export default async function WorkspacePage({
     showDate: workspace.showUrgencyDate,
     showTotal: workspace.showUrgencyTotal,
   };
+
+  const sectionTitle = inbox
+    ? inbox === "mine"
+      ? "My claimed"
+      : "Needs review"
+    : currentFolder
+      ? currentFolder.name
+      : "All Tasks";
+
+  const sectionDescription = inbox
+    ? inbox === "mine"
+      ? "Tasks you’ve claimed across every folder."
+      : "Waiting on Editor+ approval across the workspace."
+    : folderArchived
+      ? "Archived folder — history preserved; new tasks paused."
+      : isRoot
+        ? "Every task in this workspace, grouped by status. Sort follows the urgency chips that are turned on."
+        : "Subfolders and tasks grouped by status. Sort follows the urgency chips that are turned on.";
+
+  const emptyMessage = inbox
+    ? inbox === "mine"
+      ? "Nothing claimed right now. Open a folder and pick up a task."
+      : "No tasks waiting for review."
+    : folderArchived
+      ? "No tasks in this archived folder."
+      : undefined;
+
+  const listIsRoot = Boolean(inbox) || isRoot;
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
@@ -416,7 +571,7 @@ export default async function WorkspacePage({
         inFolder={Boolean(currentFolder)}
         hasRole={workspaceRoles.length > 0}
         canManageRoles={canManageRoles}
-        canEdit={canEdit}
+        canEdit={canEditBase && !workspaceArchived}
       >
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -425,16 +580,31 @@ export default async function WorkspacePage({
             </Link>
             <h1 className="mt-1 font-[family-name:var(--font-display)] text-4xl text-[#0A3D45]">
               {workspace.name}
+              {workspaceArchived ? (
+                <span className="ml-3 align-middle text-sm font-sans font-semibold uppercase tracking-wide text-[#E85D4C]">
+                  Archived
+                </span>
+              ) : null}
             </h1>
-            <p className="text-sm capitalize text-[#0A3D45]/60">
-              You’re {membership.role.toLowerCase()}
-            </p>
+            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1">
+              <p className="text-sm capitalize text-[#0A3D45]/60">
+                You’re {membership.role.toLowerCase()}
+              </p>
+              {canArchive && !workspaceArchived ? (
+                <ArchiveWorkspacePanel
+                  workspaceId={workspaceId}
+                  isArchived={false}
+                  members={archiveMembers}
+                />
+              ) : null}
+            </div>
           </div>
 
           <form className="flex flex-wrap gap-2" action={`/app/w/${workspaceId}`} method="get">
             {currentFolder ? (
               <input type="hidden" name="folder" value={currentFolder.id} />
             ) : null}
+            {inbox ? <input type="hidden" name="inbox" value={inbox} /> : null}
             <input
               name="q"
               defaultValue={q}
@@ -448,6 +618,23 @@ export default async function WorkspacePage({
           </form>
         </div>
 
+        {workspaceArchived ? (
+          <div className="mt-4">
+            {canArchive ? (
+              <ArchiveWorkspacePanel
+                workspaceId={workspaceId}
+                isArchived
+                members={archiveMembers}
+              />
+            ) : (
+              <div className="rounded-xl border border-[#E85D4C]/25 bg-[#E85D4C]/8 px-3 py-2.5 text-sm text-[#0A3D45]/80">
+                This workspace is archived. History stays visible; new work is
+                paused.
+              </div>
+            )}
+          </div>
+        ) : null}
+
         <OnboardingChooser />
         <OnboardingScrollToBlink />
 
@@ -457,6 +644,15 @@ export default async function WorkspacePage({
           hasInvite={hasInvite}
           canInvite={canInvite}
           inFolder={Boolean(currentFolder)}
+        />
+
+        <WorkspacePulseStrip
+          workspaceId={workspaceId}
+          counts={counts}
+          canReview={canEditBase && !workspaceArchived}
+          inbox={inbox}
+          myClaimedCount={myClaimedCount}
+          needsReviewCount={needsReviewCount}
         />
 
         {roleActivity.length > 0 ? (
@@ -473,7 +669,7 @@ export default async function WorkspacePage({
         ) : null}
 
         <div className="mt-8 grid gap-6 lg:grid-cols-[240px_1fr]">
-          <aside className="space-y-4">
+          <aside className={`space-y-4 ${inbox ? "hidden lg:block" : ""}`}>
             <div className="tide-panel p-4">
               <WorkspaceFoldersSidebar
                 workspaceId={workspaceId}
@@ -482,6 +678,11 @@ export default async function WorkspacePage({
                 roleNames={roleOptions.map((r) => r.name)}
                 canSetAccess={canManageRoles}
                 canEdit={canEdit}
+                templateParentId={templateParentFolder?.id ?? null}
+                templateParentName={templateParentFolder?.name ?? null}
+                currentFolderId={currentFolder?.id ?? null}
+                canSaveTemplates={canArchive}
+                savedTemplates={savedTemplates}
               />
             </div>
 
@@ -559,10 +760,15 @@ export default async function WorkspacePage({
               ) : null}
               <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="font-[family-name:var(--font-display)] text-2xl text-[#0A3D45]">
-                  {currentFolder ? currentFolder.name : "All Tasks"}
+                  {sectionTitle}
+                  {folderArchived ? (
+                    <span className="ml-2 align-middle text-sm font-sans font-semibold uppercase tracking-wide text-[#E85D4C]">
+                      Archived
+                    </span>
+                  ) : null}
                 </h2>
                 <div className="flex flex-wrap items-center gap-2">
-                  {currentFolder ? (
+                  {!inbox && currentFolder ? (
                     <Link
                       href={`/app/w/${workspaceId}`}
                       className="tide-btn-secondary !px-3 !py-1.5 text-xs"
@@ -570,20 +776,43 @@ export default async function WorkspacePage({
                       See All Tasks
                     </Link>
                   ) : null}
-                  {canEdit && currentFolder ? (
+                  {!inbox && canEdit && currentFolder ? (
                     <FolderActions
                       {...folderActionsProps(currentFolder.id, currentFolder.name)}
                     />
                   ) : null}
+                  {!inbox &&
+                  canArchive &&
+                  currentFolder &&
+                  !workspaceArchived &&
+                  !folderArchived ? (
+                    <ArchiveFolderControls
+                      workspaceId={workspaceId}
+                      folderId={currentFolder.id}
+                      folderName={currentFolder.name}
+                      isArchived={false}
+                      members={archiveMembers}
+                    />
+                  ) : null}
                 </div>
               </div>
-              <p className="text-sm text-[#0A3D45]/60">
-                {isRoot
-                  ? "Every task in this workspace, grouped by status. Sort follows the urgency chips that are turned on."
-                  : "Subfolders and tasks grouped by status. Sort follows the urgency chips that are turned on."}
-              </p>
+              <p className="text-sm text-[#0A3D45]/60">{sectionDescription}</p>
 
-              {childFolders.length > 0 ? (
+              {!inbox &&
+              canArchive &&
+              currentFolder &&
+              !workspaceArchived &&
+              folderArchived ? (
+                <ArchiveFolderControls
+                  workspaceId={workspaceId}
+                  folderId={currentFolder.id}
+                  folderName={currentFolder.name}
+                  isArchived
+                  members={archiveMembers}
+                />
+              ) : null}
+
+              {!inbox && childFolders.length > 0 ? (
                 <OnboardingFolderBubbles
                   workspaceId={workspaceId}
                   childFolders={childFolders.map((f) => ({
@@ -600,14 +829,14 @@ export default async function WorkspacePage({
                 />
               ) : null}
 
-              {isRoot && canEdit ? (
+              {!inbox && isRoot && canEdit ? (
                 <p className="mt-4 text-sm text-[#0A3D45]/65">
                   Open a folder to add tasks. All Tasks lists everything by status.
                 </p>
               ) : null}
             </div>
 
-            {canEdit && currentFolder ? (
+            {!inbox && canEdit && currentFolder ? (
               <WorkspaceAddTaskPanel
                 workspaceId={workspaceId}
                 folderId={currentFolder.id}
@@ -620,11 +849,13 @@ export default async function WorkspacePage({
               workspaceId={workspaceId}
               userId={user.id}
               canEdit={canEdit}
-              isRoot={isRoot}
+              isRoot={listIsRoot}
               tasks={tasks}
               publicTagOptions={publicTagOptions}
               privateTagOptions={privateTagOptions}
               urgencyChips={urgencyChips}
+              assignableMembers={assignableMembers}
+              emptyMessage={emptyMessage}
             />
           </section>
         </div>

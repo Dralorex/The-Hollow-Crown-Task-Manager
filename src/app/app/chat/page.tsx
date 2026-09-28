@@ -1,7 +1,8 @@
 import Link from "next/link";
 import { format } from "date-fns";
 import { InlineActionForm } from "@/app/components/forms";
-import { ChatMessageComposer } from "@/app/components/chat-message-composer";
+import { ChatComposer, ChatMessageBody } from "@/app/components/chat-composer";
+import { ChatPresenceStrip } from "@/app/components/chat-presence";
 import { ChatRowMenu } from "@/app/components/chat-row-menu";
 import { MarkChatSeen } from "@/app/components/mark-chat-seen";
 import { StartDmForm } from "@/app/components/start-dm-form";
@@ -10,6 +11,8 @@ import { CreateWorkspaceGroupForm } from "@/app/components/create-workspace-grou
 import { respondDmRequestAction } from "@/app/actions/social";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import { canManagePeople } from "@/lib/permissions";
+import { parseTaskLinkIds, toTaskOption } from "@/lib/task-links";
 import { personLabel, type UserLabel } from "@/lib/utils";
 
 type Tab = "hub" | "dms" | "groups" | "workspace-groups";
@@ -118,10 +121,103 @@ export default async function ChatPage({
       })
     : [];
 
+  const myMembership = active
+    ? await prisma.chatMember.findUnique({
+        where: { groupId_userId: { groupId: active.id, userId } },
+      })
+    : null;
+
+  const mentionOptions = active
+    ? [
+        ...(!active.isDirect
+          ? ([
+              { kind: "everyone" as const, label: "@everyone", insert: "@everyone " },
+            ] as const)
+          : []),
+        ...(active.workspaceId
+          ? (["OWNER", "ADMIN", "EDITOR", "MEMBER"] as const).map((role) => ({
+              kind: "role" as const,
+              label: `@${role.charAt(0)}${role.slice(1).toLowerCase()}`,
+              insert: `@${role.charAt(0)}${role.slice(1).toLowerCase()} `,
+            }))
+          : []),
+        ...active.members
+          .filter((m) => m.userId !== userId && !m.user.deletedAt)
+          .map((m) => ({
+            kind: "user" as const,
+            label: `@${m.user.username}`,
+            insert: `@${m.user.username} `,
+          })),
+      ]
+    : [];
+
+  const canElevatedMentions = active
+    ? active.workspaceId
+      ? await (async () => {
+          const mem = await prisma.membership.findUnique({
+            where: {
+              workspaceId_userId: {
+                workspaceId: active.workspaceId!,
+                userId,
+              },
+            },
+          });
+          return Boolean(mem && canManagePeople(mem.role));
+        })()
+      : true
+    : false;
+
+  const filteredMentionOptions = canElevatedMentions
+    ? mentionOptions
+    : mentionOptions.filter((o) => o.kind === "user");
+
+  const workspaceIdsForTasks = [
+    ...new Set(
+      groups
+        .map((g) => g.workspaceId)
+        .filter((id): id is string => Boolean(id)),
+    ),
+  ];
+  if (active?.workspaceId) workspaceIdsForTasks.push(active.workspaceId);
+
+  const linkedTaskIds = [
+    ...new Set(threadMessages.flatMap((m) => parseTaskLinkIds(m.body))),
+  ];
+
+  const tasksForPicker =
+    workspaceIdsForTasks.length > 0
+      ? await prisma.task.findMany({
+          where: { workspaceId: { in: [...new Set(workspaceIdsForTasks)] } },
+          include: { workspace: { select: { name: true } }, folder: true },
+          orderBy: { updatedAt: "desc" },
+          take: 80,
+        })
+      : [];
+
+  const linkedTasks =
+    linkedTaskIds.length > 0
+      ? await prisma.task.findMany({
+          where: { id: { in: linkedTaskIds } },
+          include: { workspace: { select: { name: true } }, folder: true },
+        })
+      : [];
+
+  const taskOptions = tasksForPicker.map(toTaskOption);
+  const taskMap = Object.fromEntries(
+    [...tasksForPicker, ...linkedTasks].map((t) => [
+      t.id,
+      {
+        id: t.id,
+        name: t.name,
+        href: `/app/w/${t.workspaceId}?folder=${t.folderId}`,
+      },
+    ]),
+  );
+
   const unreadByGroup = await prisma.notification.findMany({
     where: {
       userId: user.id,
-      type: "CHAT_MESSAGE",
+      type: { in: ["CHAT_MESSAGE", "CHAT_MENTION"] },
       read: false,
     },
     select: { meta: true },
@@ -502,6 +598,13 @@ export default async function ChatPage({
                   {active.members.map((m) => personLabel(m.user)).join(", ")}
                   {active.closedAt ? " · closed" : ""}
                 </p>
+                <ChatPresenceStrip
+                  groupId={active.id}
+                  memberUsernames={active.members.map((m) => ({
+                    userId: m.user.id,
+                    username: m.user.username,
+                  }))}
+                />
               </div>
               <ChatRowMenu
                 groupId={active.id}
@@ -542,7 +645,7 @@ export default async function ChatPage({
                   <span className="text-xs text-[#0A3D45]/45">
                     {format(msg.createdAt, "MMM d · HH:mm")}
                   </span>
-                  <p className="text-[#0A3D45]/80">{msg.body}</p>
+                  <ChatMessageBody body={msg.body} taskMap={taskMap} />
                 </div>
               ))}
               {threadMessages.length === 0 ? (
@@ -555,9 +658,18 @@ export default async function ChatPage({
                   This chat was closed. You can still read it, but messaging is
                   off. Start a new DM with them to chat again.
                 </p>
-              ) : (
-                <ChatMessageComposer groupId={active.id} />
-              )}
+              ) : myMembership ? (
+                <ChatComposer
+                  groupId={active.id}
+                  options={filteredMentionOptions}
+                  taskOptions={taskOptions}
+                  memberUsernames={active.members.map((m) => ({
+                    userId: m.user.id,
+                    username: m.user.username,
+                  }))}
+                  notifyMode={myMembership.notifyMode}
+                />
+              ) : null}
             </div>
           </>
         ) : null}

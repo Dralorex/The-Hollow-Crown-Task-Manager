@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { ChatSidebarSection } from "@/app/components/chat-sidebar-section";
+import { FolderTemplatesPanel } from "@/app/components/folder-templates-panel";
 import { GuidedCreateFolderForm } from "@/app/components/guided-create-folder-form";
 import { useWorkspaceOnboarding } from "@/app/components/workspace-onboarding-context";
 import {
@@ -18,6 +19,11 @@ export function WorkspaceFoldersSidebar({
   roleNames,
   canSetAccess,
   canEdit,
+  templateParentId = null,
+  templateParentName = null,
+  currentFolderId = null,
+  canSaveTemplates = false,
+  savedTemplates = [],
 }: {
   workspaceId: string;
   parentId?: string | null;
@@ -25,6 +31,11 @@ export function WorkspaceFoldersSidebar({
   roleNames: string[];
   canSetAccess: boolean;
   canEdit: boolean;
+  templateParentId?: string | null;
+  templateParentName?: string | null;
+  currentFolderId?: string | null;
+  canSaveTemplates?: boolean;
+  savedTemplates?: { id: string; name: string; treeJson: string }[];
 }) {
   const { active, step, setStep, blink } = useWorkspaceOnboarding();
   const [open, setOpen] = useState(false);
@@ -78,6 +89,17 @@ export function WorkspaceFoldersSidebar({
           Editors and above can add folders.
         </p>
       )}
+      {canEdit || canSaveTemplates ? (
+        <FolderTemplatesPanel
+          workspaceId={workspaceId}
+          parentId={templateParentId}
+          currentFolderId={currentFolderId}
+          currentFolderName={templateParentName}
+          canEdit={canEdit}
+          canSave={canSaveTemplates}
+          savedTemplates={savedTemplates}
+        />
+      ) : null}
     </ChatSidebarSection>
   );
 }

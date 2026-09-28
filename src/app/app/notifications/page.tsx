@@ -15,9 +15,11 @@ import {
 import { InlineActionForm } from "@/app/components/forms";
 import { MarkNotificationsSeen } from "@/app/components/mark-notifications-seen";
 import { RoleActivityNotices } from "@/app/components/role-activity-notices";
+import { WeeklyDigestPanel } from "@/app/components/weekly-digest-panel";
 import { requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { getRoleActivityUnread } from "@/lib/folder-access";
+import { buildWeeklyDigest } from "@/lib/weekly-digest";
 
 type NotifMeta = {
   token?: string;
@@ -53,6 +55,10 @@ function typeLabel(type: string) {
       return "Chat request";
     case "CHAT_MESSAGE":
       return "Chat";
+    case "CHAT_MENTION":
+      return "Mention";
+    case "TASK_ASSIGNED":
+      return "Assigned";
     case "DEADLINE_SOON":
       return "Deadline";
     case "TASK_REVIEW":
@@ -68,6 +74,8 @@ function typeLabel(type: string) {
     case "WORKSPACE_BIRTHDAY_DECISION":
     case "BIRTHDAY_TODAY":
       return "Birthday";
+    case "WEEKLY_DIGEST":
+      return "Digest";
     default:
       return "Update";
   }
@@ -75,6 +83,17 @@ function typeLabel(type: string) {
 
 export default async function NotificationsPage() {
   const user = await requireUser();
+
+  const fullUser = await prisma.user.findUniqueOrThrow({
+    where: { id: user.id },
+    select: {
+      email: true,
+      weeklyDigestEnabled: true,
+      weeklyDigestLastSentAt: true,
+    },
+  });
+
+  const digestPreview = await buildWeeklyDigest(user.id);
 
   const notifications = await prisma.notification.findMany({
     where: {
@@ -230,8 +249,21 @@ export default async function NotificationsPage() {
         Invites, friends, deadlines, role task activity, and task updates. Chat
         messages and DM requests live under Chat. Opening this tab clears the
         unread badge for inbox items (role activity is cleared per role when
-        marked seen or when you open that role’s folders).
+        marked seen or when         you open that role’s folders).
       </p>
+
+      {digestPreview ? (
+        <WeeklyDigestPanel
+          enabled={fullUser.weeklyDigestEnabled}
+          lastSentAt={
+            fullUser.weeklyDigestLastSentAt
+              ? fullUser.weeklyDigestLastSentAt.toISOString()
+              : null
+          }
+          hasEmail={Boolean(fullUser.email)}
+          preview={digestPreview}
+        />
+      ) : null}
 
       {roleActivityByWorkspace.length > 0 ? (
         <div className="mt-8 space-y-4">

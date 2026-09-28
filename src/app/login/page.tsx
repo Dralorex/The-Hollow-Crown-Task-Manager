@@ -2,6 +2,7 @@ import Link from "next/link";
 import { AuthForm } from "@/app/components/forms";
 import { ShowPasswordField } from "@/app/components/show-password-field";
 import { SignInDurationFields } from "@/app/components/sign-in-duration-fields";
+import { UsernameField } from "@/app/components/username-field";
 import { signInAction } from "@/app/actions/auth";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
@@ -53,15 +54,7 @@ export default async function LoginPage({
             {addingAccount ? (
               <input type="hidden" name="addAccount" value="1" />
             ) : null}
-            <label className="flex flex-col gap-1 text-sm font-medium text-[color:var(--tide-deep)]">
-              Username
-              <input
-                name="username"
-                required
-                autoComplete="username"
-                className="tide-input"
-              />
-            </label>
+            <UsernameField />
             <ShowPasswordField autoComplete="current-password" />
             <SignInDurationFields />
           </AuthForm>

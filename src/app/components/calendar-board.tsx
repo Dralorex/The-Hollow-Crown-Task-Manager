@@ -31,6 +31,7 @@ import {
   deleteWorkspaceEventAction,
   hidePersonalEventAction,
   setCalendarWorkspaceFilterAction,
+  moveCalendarItemAction,
   setShowBirthdaysAction,
   updatePersonalEventAction,
   updateWorkspaceEventAction,
@@ -55,6 +56,7 @@ export type CalendarBoardEvent = {
   endAt: string | null;
   sourceLabel: string;
   href?: string;
+  canMove?: boolean;
 };
 
 type CalendarWorkspace = {
@@ -563,6 +565,15 @@ export function CalendarBoard({
   const [expandedId, setExpandedId] = useState<string | null>(null);
   const [focusedDate, setFocusedDate] = useState<string | null>(null);
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
+  const [localEvents, setLocalEvents] = useState(events);
+  const [dragOverDay, setDragOverDay] = useState<string | null>(null);
+  const [dragError, setDragError] = useState<string | null>(null);
+  const [dndPending, startDndTransition] = useTransition();
+
+  const eventsKey = events.map((e) => `${e.id}:${e.date}`).join("|");
+  useEffect(() => {
+    setLocalEvents(events);
+  }, [events, eventsKey]);
   const selectedWorkspace = workspaces.find(
     (workspace) => workspace.id === selectedWorkspaceId,
   );
@@ -579,12 +590,41 @@ export function CalendarBoard({
 
   const eventsByDay = useMemo(() => {
     const grouped = new Map<string, CalendarBoardEvent[]>();
-    for (const event of events) {
+    for (const event of localEvents) {
       const key = eventDateKey(event);
       grouped.set(key, [...(grouped.get(key) ?? []), event]);
     }
     return grouped;
-  }, [events]);
+  }, [localEvents]);
+
+  function moveEvent(eventId: string, toDay: string) {
+    const event = localEvents.find((e) => e.id === eventId);
+    if (!event || !event.canMove) return;
+    if (event.kind === "birthday") return;
+    const fromDay = eventDateKey(event);
+    if (fromDay === toDay) return;
+
+    const prev = localEvents;
+    const nextDate = new Date(`${toDay}T12:00:00`).toISOString();
+    setDragError(null);
+    setLocalEvents((list) =>
+      list.map((e) => (e.id === eventId ? { ...e, date: nextDate } : e)),
+    );
+
+    startDndTransition(async () => {
+      const result = await moveCalendarItemAction(
+        event.kind as "personal" | "task" | "workspace",
+        event.recordId,
+        toDay,
+      );
+      if (!result.ok) {
+        setLocalEvents(prev);
+        setDragError(result.error);
+        return;
+      }
+      router.refresh();
+    });
+  }
 
   const monthDays = useMemo(
     () =>
@@ -892,6 +932,13 @@ export function CalendarBoard({
               →
             </button>
           </div>
+          <p className="mb-3 text-xs text-[#0A3D45]/55">
+            Drag personal, task, or workspace items onto another day
+            {dndPending ? " · Saving…" : ""}.
+          </p>
+          {dragError ? (
+            <p className="mb-3 text-xs text-[#9b2f22]">{dragError}</p>
+          ) : null}
           <div className="grid grid-cols-7 border-l border-t border-[#0A3D45]/10">
             {["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"].map((day) => (
               <div
@@ -904,12 +951,35 @@ export function CalendarBoard({
             {monthDays.map((day) => {
               const key = format(day, "yyyy-MM-dd");
               const dayEvents = eventsByDay.get(key) ?? [];
+              const isOver = dragOverDay === key;
               return (
-                <button
+                <div
                   key={key}
-                  type="button"
+                  role="button"
+                  tabIndex={0}
                   onClick={() => focusDay(key, dayEvents)}
-                  className={`min-h-24 border-b border-r border-[#0A3D45]/10 p-2 text-left align-top transition hover:bg-[#3DBEAB]/10 ${
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      focusDay(key, dayEvents);
+                    }
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault();
+                    setDragOverDay(key);
+                  }}
+                  onDragLeave={() => {
+                    setDragOverDay((cur) => (cur === key ? null : cur));
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault();
+                    setDragOverDay(null);
+                    const eventId = e.dataTransfer.getData("text/calendar-event");
+                    if (eventId) moveEvent(eventId, key);
+                  }}
+                  className={`min-h-24 cursor-pointer border-b border-r border-[#0A3D45]/10 p-2 text-left align-top transition hover:bg-[#3DBEAB]/10 ${
+                    isOver ? "bg-[#3DBEAB]/20 ring-1 ring-[#1a7a82]/40" : ""
+                  } ${
                     isSameMonth(day, month)
                       ? "calendar-day-cell-current bg-white/25"
                       : "calendar-day-cell-muted bg-[#0A3D45]/[0.025]"
@@ -928,7 +998,21 @@ export function CalendarBoard({
                     {dayEvents.slice(0, 3).map((event) => (
                       <span
                         key={event.id}
-                        className="calendar-event-chip block truncate rounded bg-[#0A3D45]/10 px-1.5 py-1 text-[10px] font-medium text-[#0A3D45]"
+                        draggable={Boolean(event.canMove)}
+                        onDragStart={(e) => {
+                          if (!event.canMove) return;
+                          e.stopPropagation();
+                          e.dataTransfer.setData("text/calendar-event", event.id);
+                          e.dataTransfer.effectAllowed = "move";
+                        }}
+                        className={`calendar-event-chip block truncate rounded bg-[#0A3D45]/10 px-1.5 py-1 text-[10px] font-medium text-[#0A3D45] ${
+                          event.canMove
+                            ? "cursor-grab active:cursor-grabbing"
+                            : ""
+                        }`}
+                        title={
+                          event.canMove ? `${event.title} · drag to move` : event.title
+                        }
                       >
                         {event.title}
                       </span>
@@ -939,7 +1023,7 @@ export function CalendarBoard({
                       </span>
                     ) : null}
                   </span>
-                </button>
+                </div>
               );
             })}
           </div>
