@@ -25,6 +25,7 @@ export function FolderBubble({
   unclaimed,
   showActions,
   folderActions,
+  blink = false,
 }: {
   workspaceId: string;
   folderId: string;
@@ -36,6 +37,8 @@ export function FolderBubble({
   unclaimed: number;
   showActions: boolean;
   folderActions: FolderActionsProps;
+  /** Slow blue pulse while onboarding asks the user to open a folder. */
+  blink?: boolean;
 }) {
   const href = `/app/w/${workspaceId}?folder=${folderId}`;
 
@@ -45,11 +48,16 @@ export function FolderBubble({
         locked
           ? "cursor-not-allowed border-[#0A3D45]/8 bg-[#0A3D45]/[0.015] opacity-80"
           : "border-[#0A3D45]/10 bg-[#0A3D45]/[0.02] hover:border-[#0A3D45]/20 hover:bg-[#0A3D45]/[0.05]"
+      } ${
+        blink && !locked
+          ? "animate-rowgon-blink-empty ring-2 ring-inset ring-[#3b82f6]/55"
+          : ""
       }`}
     >
       {!locked ? (
         <Link
           href={href}
+          data-onboarding={blink ? "folder-bubble" : undefined}
           className="absolute inset-0 z-0 rounded-lg"
           aria-label={`Open folder ${name}`}
         />

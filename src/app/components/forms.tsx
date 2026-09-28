@@ -1,8 +1,9 @@
 "use client";
 
-import { useActionState } from "react";
+import { useActionState, useEffect, useRef } from "react";
 import { useFormStatus } from "react-dom";
 import type { ActionResult } from "@/app/actions/auth";
+import { enterAdvancesFocus } from "@/lib/form-keyboard";
 
 export type { ActionResult };
 
@@ -72,17 +73,34 @@ export function InlineActionForm({
   children,
   className,
   successMessage,
+  submitClassName,
+  onSuccess,
 }: {
   action: FormAction;
   submitLabel: string;
   children: React.ReactNode;
   className?: string;
   successMessage?: string;
+  submitClassName?: string;
+  /** Called after a successful action result (e.g. reset local fields). */
+  onSuccess?: () => void;
 }) {
   const [state, formAction] = useActionState(action, null);
+  const handledSuccess = useRef<ActionResult | null>(null);
+
+  useEffect(() => {
+    if (!state?.ok || !onSuccess) return;
+    if (handledSuccess.current === state) return;
+    handledSuccess.current = state;
+    onSuccess();
+  }, [state, onSuccess]);
 
   return (
-    <form className={className ?? "flex flex-col gap-3"} action={formAction}>
+    <form
+      className={className ?? "flex flex-col gap-3"}
+      action={formAction}
+      onKeyDown={enterAdvancesFocus}
+    >
       {children}
       {state && !state.ok ? (
         <p className="text-sm text-[#9b2f22]">{state.error}</p>
@@ -90,7 +108,10 @@ export function InlineActionForm({
       {state && state.ok && successMessage ? (
         <p className="text-sm text-[#0A3D45]/75">{successMessage}</p>
       ) : null}
-      <SubmitButton label={submitLabel} className="tide-btn-secondary text-sm" />
+      <SubmitButton
+        label={submitLabel}
+        className={`tide-btn-secondary text-sm ${submitClassName ?? ""}`.trim()}
+      />
     </form>
   );
 }

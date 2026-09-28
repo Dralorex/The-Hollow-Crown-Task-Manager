@@ -14,6 +14,21 @@ import { createPortal, flushSync } from "react-dom";
 const SUGGESTION_ROW_REM = 2.25;
 const MAX_VISIBLE_SUGGESTIONS = 6;
 
+function parseDefaultTags(raw: string, allowMultiple: boolean): string[] {
+  if (!allowMultiple) return raw.trim() ? [raw.trim()] : [];
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const part of raw.split(",")) {
+    const t = part.trim();
+    if (!t) continue;
+    const key = t.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+  }
+  return out;
+}
+
 /** Text input with a clickable suggestion list of existing tags. */
 export function TagSuggestInput({
   tags,
@@ -29,6 +44,24 @@ export function TagSuggestInput({
   clearOptionLabel,
   allowMultiple = false,
   keepOpenOnPick = false,
+  /**
+   * When true with allowMultiple, use chip UI. Tags commit on suggestion
+   * pick or blur (phone Done) — not Enter, which advances focus like Tab.
+   */
+  commitTagOnEnter = false,
+  /** Optional marker on the visible input for onboarding focus targets. */
+  dataOnboarding,
+  /**
+   * Fired when a tag/role is actually committed (chip added, suggestion
+   * picked, or blur-applied) — not on every keystroke or bare Enter.
+   */
+  onCommittedTagsChange,
+  /** Visible input focused (e.g. hide an onboarding tip). */
+  onInputFocus,
+  /** Field blurred after commit attempt (click-out / keyboard dismiss). */
+  onInputBlur,
+  /** Enter pressed on the field (after preventDefault; draft may be committed). */
+  onEnterPress,
 }: {
   tags: string[];
   name?: string;
@@ -50,9 +83,20 @@ export function TagSuggestInput({
    * so another tag can be typed. Closes only if the tag is already selected.
    */
   keepOpenOnPick?: boolean;
+  commitTagOnEnter?: boolean;
+  dataOnboarding?: string;
+  onCommittedTagsChange?: (tags: string[]) => void;
+  onInputFocus?: () => void;
+  onInputBlur?: () => void;
+  onEnterPress?: () => void;
 }) {
+  const useChips = Boolean(commitTagOnEnter && allowMultiple);
   const [open, setOpen] = useState(false);
   const [value, setValue] = useState(defaultValue);
+  const [chips, setChips] = useState<string[]>(() =>
+    useChips ? parseDefaultTags(defaultValue, true) : [],
+  );
+  const [draft, setDraft] = useState("");
   const [mounted, setMounted] = useState(false);
   const [coords, setCoords] = useState<{
     top: number;
@@ -64,14 +108,18 @@ export function TagSuggestInput({
   const panelRef = useRef<HTMLDivElement>(null);
   const listId = useId();
 
-  const segments = allowMultiple ? value.split(",") : [value];
-  const head = allowMultiple
+  const segments = allowMultiple && !useChips ? value.split(",") : [value];
+  const head = allowMultiple && !useChips
     ? segments
         .slice(0, -1)
         .map((s) => s.trim())
         .filter(Boolean)
-    : [];
-  const activeQuery = (segments[segments.length - 1] ?? "").trim().toLowerCase();
+    : useChips
+      ? chips
+      : [];
+  const activeQuery = useChips
+    ? draft.trim().toLowerCase()
+    : (segments[segments.length - 1] ?? "").trim().toLowerCase();
   const taken = new Set(head.map((s) => s.toLowerCase()));
 
   const filtered = tags.filter((t) => {
@@ -81,13 +129,41 @@ export function TagSuggestInput({
     return lower.includes(activeQuery);
   });
 
+  const formValue = useChips
+    ? [...chips, ...(draft.trim() ? [draft.trim()] : [])].join(", ")
+    : value;
+
+  const onCommittedTagsChangeRef = useRef(onCommittedTagsChange);
+  onCommittedTagsChangeRef.current = onCommittedTagsChange;
+  const onInputFocusRef = useRef(onInputFocus);
+  onInputFocusRef.current = onInputFocus;
+  const onInputBlurRef = useRef(onInputBlur);
+  onInputBlurRef.current = onInputBlur;
+  const onEnterPressRef = useRef(onEnterPress);
+  onEnterPressRef.current = onEnterPress;
+
+  function emitCommitted(list: string[]) {
+    onCommittedTagsChangeRef.current?.(list);
+  }
+
   useEffect(() => {
     setMounted(true);
   }, []);
 
   useEffect(() => {
-    setValue(defaultValue);
-  }, [defaultValue]);
+    if (useChips) {
+      setChips(parseDefaultTags(defaultValue, true));
+      setDraft("");
+    } else {
+      setValue(defaultValue);
+    }
+  }, [defaultValue, useChips]);
+
+  // Chip mode: notify when the committed chip list changes (pick / blur / Enter).
+  useEffect(() => {
+    if (!useChips) return;
+    emitCommitted(chips);
+  }, [chips, useChips]);
 
   const place = useCallback(() => {
     const input = inputRef.current;
@@ -123,7 +199,7 @@ export function TagSuggestInput({
       window.removeEventListener("resize", onReposition);
       window.removeEventListener("scroll", onReposition, true);
     };
-  }, [open, place, filtered.length, value, clearOptionLabel]);
+  }, [open, place, filtered.length, value, draft, chips, clearOptionLabel]);
 
   useEffect(() => {
     if (!open) return;
@@ -144,17 +220,114 @@ export function TagSuggestInput({
     };
   }, [open]);
 
+  // Phone “Done” / check dismisses the keyboard via blur — close the menu then.
+  // Delay so tapping a suggestion (mousedown → click) still registers first.
+  const blurCloseTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const pickingRef = useRef(false);
+
+  useEffect(() => {
+    return () => {
+      if (blurCloseTimer.current) clearTimeout(blurCloseTimer.current);
+    };
+  }, []);
+
+  function commitTypedTagFromInput() {
+    const piece = (inputRef.current?.value ?? "").trim();
+    if (!piece) return;
+
+    if (useChips) {
+      addChip(piece, false);
+      return;
+    }
+
+    if (!allowMultiple) {
+      emitCommitted(parseDefaultTags(piece, false));
+      return;
+    }
+
+    const current = inputRef.current?.value ?? value;
+    const parts = current.split(",");
+    const last = (parts[parts.length - 1] ?? "").trim();
+    if (!last) return;
+    const prior = parts
+      .slice(0, -1)
+      .map((s) => s.trim())
+      .filter(Boolean);
+    if (prior.some((p) => p.toLowerCase() === last.toLowerCase())) {
+      setValue(prior.join(", "));
+      emitCommitted(prior);
+      return;
+    }
+    const next = [...prior, last];
+    setValue(next.join(", "));
+    emitCommitted(next);
+  }
+
+  function scheduleCloseOnBlur() {
+    if (blurCloseTimer.current) clearTimeout(blurCloseTimer.current);
+    blurCloseTimer.current = setTimeout(() => {
+      blurCloseTimer.current = null;
+      if (pickingRef.current) return;
+      if (document.activeElement === inputRef.current) return;
+      // Phone Done/check dismisses the keyboard via blur — apply typed tags.
+      commitTypedTagFromInput();
+      setOpen(false);
+      onInputBlurRef.current?.();
+    }, 160);
+  }
+
+  function cancelBlurClose() {
+    if (blurCloseTimer.current) {
+      clearTimeout(blurCloseTimer.current);
+      blurCloseTimer.current = null;
+    }
+  }
   function commit(next: string, submit: boolean) {
     flushSync(() => {
       setValue(next);
       setOpen(false);
     });
+    emitCommitted(parseDefaultTags(next, allowMultiple));
     if (submit) {
       inputRef.current?.form?.requestSubmit();
     }
   }
 
+  function addChip(tag: string, keepOpen: boolean) {
+    const trimmed = tag.trim();
+    if (!trimmed) return;
+    let added = false;
+    setChips((prev) => {
+      if (prev.some((t) => t.toLowerCase() === trimmed.toLowerCase())) {
+        return prev;
+      }
+      added = true;
+      return [...prev, trimmed];
+    });
+    setDraft("");
+    if (keepOpen && added) {
+      setOpen(true);
+      requestAnimationFrame(() => {
+        const el = inputRef.current;
+        if (!el) return;
+        el.focus();
+        place();
+      });
+    } else if (!keepOpen) {
+      setOpen(false);
+    }
+  }
+
+  function removeChip(tag: string) {
+    setChips((prev) => prev.filter((t) => t.toLowerCase() !== tag.toLowerCase()));
+  }
+
   function pickSuggestion(tag: string) {
+    if (useChips) {
+      addChip(tag, Boolean(keepOpenOnPick));
+      return;
+    }
+
     if (!allowMultiple) {
       commit(tag, Boolean(submitOnPick));
       return;
@@ -166,8 +339,10 @@ export function TagSuggestInput({
     }
 
     if (keepOpenOnPick) {
-      const next = `${[...head, tag].join(", ")}, `;
+      const committed = [...head, tag];
+      const next = `${committed.join(", ")}, `;
       setValue(next);
+      emitCommitted(committed);
       setOpen(true);
       requestAnimationFrame(() => {
         const el = inputRef.current;
@@ -184,6 +359,20 @@ export function TagSuggestInput({
     commit(next, Boolean(submitOnPick));
   }
 
+  function onEnterKey(e: React.KeyboardEvent<HTMLInputElement>) {
+    if (e.key !== "Enter") return;
+    // Never submit on Enter. Optional onEnterPress (e.g. onboarding) can
+    // advance; otherwise the parent form treats Enter as Tab.
+    if (e.nativeEvent.isComposing) return;
+    if (!commitTagOnEnter && !allowMultiple && !onEnterPressRef.current) return;
+    e.preventDefault();
+    commitTypedTagFromInput();
+    if (onEnterPressRef.current) {
+      e.stopPropagation();
+      onEnterPressRef.current();
+    }
+  }
+
   const listMaxHeight = `${MAX_VISIBLE_SUGGESTIONS * SUGGESTION_ROW_REM}rem`;
 
   const dropdown =
@@ -193,7 +382,7 @@ export function TagSuggestInput({
             ref={panelRef}
             id={listId}
             role="listbox"
-            className="fixed z-[200] overflow-hidden rounded-lg border border-[color:var(--panel-border)] bg-[color:var(--menu-bg)] py-1 shadow-lg"
+            className="fixed z-[200] overflow-hidden"
             style={{
               top: coords?.top ?? 0,
               left: coords?.left ?? 0,
@@ -201,12 +390,28 @@ export function TagSuggestInput({
               visibility: coords ? "visible" : "hidden",
             }}
           >
-            {clearOptionLabel && value.trim() ? (
+            <div className="overflow-hidden rounded-lg border border-[color:var(--panel-border)] bg-[color:var(--menu-bg)] py-1 shadow-lg">
+            {clearOptionLabel && (useChips ? chips.length > 0 || draft.trim() : value.trim()) ? (
               <button
                 type="button"
                 role="option"
                 className="block w-full px-3 py-1.5 text-left text-xs text-[#0A3D45]/60 hover:bg-[#0A3D45]/[0.06]"
-                onClick={() => commit("", Boolean(submitOnPick))}
+                onMouseDown={(e) => {
+                  e.preventDefault();
+                  pickingRef.current = true;
+                  cancelBlurClose();
+                }}
+                onClick={() => {
+                  pickingRef.current = false;
+                  if (useChips) {
+                    setChips([]);
+                    setDraft("");
+                    setOpen(false);
+                    if (submitOnPick) inputRef.current?.form?.requestSubmit();
+                  } else {
+                    commit("", Boolean(submitOnPick));
+                  }
+                }}
               >
                 {clearOptionLabel}
               </button>
@@ -235,13 +440,22 @@ export function TagSuggestInput({
                           ? "font-semibold text-[#0A3D45]"
                           : "text-[#0A3D45]/80"
                       }`}
-                      onClick={() => pickSuggestion(tag)}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        pickingRef.current = true;
+                        cancelBlurClose();
+                      }}
+                      onClick={() => {
+                        pickingRef.current = false;
+                        pickSuggestion(tag);
+                      }}
                     >
                       {tag}
                     </button>
                   );
                 })
               )}
+            </div>
             </div>
           </div>,
           document.body,
@@ -250,12 +464,35 @@ export function TagSuggestInput({
 
   return (
     <div className={className}>
-      <div ref={wrapRef} className="relative">
+      <div ref={wrapRef} className="relative space-y-1.5">
+        {useChips && chips.length > 0 ? (
+          <ul className="flex flex-wrap gap-1.5">
+            {chips.map((tag) => (
+              <li key={tag.toLowerCase()}>
+                <button
+                  type="button"
+                  className="inline-flex items-center gap-1 rounded-md bg-[#0A3D45]/8 px-2 py-0.5 text-xs font-medium text-[#0A3D45]"
+                  onClick={() => removeChip(tag)}
+                  aria-label={`Remove tag ${tag}`}
+                >
+                  {tag}
+                  <span aria-hidden className="text-[#0A3D45]/45">
+                    ×
+                  </span>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+        {useChips ? (
+          <input type="hidden" name={name} value={formValue} />
+        ) : null}
         <input
           ref={inputRef}
-          name={name}
-          value={value}
-          required={required}
+          name={useChips ? undefined : name}
+          data-onboarding={dataOnboarding}
+          value={useChips ? draft : value}
+          required={required && !(useChips ? formValue.trim() : value.trim())}
           autoComplete="off"
           aria-autocomplete="list"
           aria-expanded={open}
@@ -263,11 +500,21 @@ export function TagSuggestInput({
           placeholder={placeholder}
           className={inputClassName}
           onChange={(e) => {
-            setValue(e.target.value);
+            if (useChips) setDraft(e.target.value);
+            else setValue(e.target.value);
             setOpen(true);
           }}
-          onFocus={() => setOpen(true)}
-          onClick={() => setOpen(true)}
+          onFocus={() => {
+            cancelBlurClose();
+            setOpen(true);
+            onInputFocusRef.current?.();
+          }}
+          onClick={() => {
+            setOpen(true);
+            onInputFocusRef.current?.();
+          }}
+          onBlur={scheduleCloseOnBlur}
+          onKeyDown={onEnterKey}
         />
       </div>
       {hint ? (
