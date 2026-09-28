@@ -140,7 +140,7 @@ export default async function WorkspacePage({
     directTotalCounts,
   );
 
-  // All Tasks = no folder query param. Show all tasks by urgency.
+  // All Tasks = no folder query param. Same status sections as folders.
   const isRoot = !sp.folder;
   const currentFolderId = sp.folder ?? null;
   const currentFolder = currentFolderId
@@ -539,7 +539,7 @@ export default async function WorkspacePage({
               </div>
               <p className="text-sm text-[#0A3D45]/60">
                 {isRoot
-                  ? "Every task in this workspace. Sort follows the urgency chips that are turned on."
+                  ? "Every task in this workspace, grouped by status. Sort follows the urgency chips that are turned on."
                   : "Subfolders and tasks grouped by status. Sort follows the urgency chips that are turned on."}
               </p>
 
@@ -596,7 +596,7 @@ export default async function WorkspacePage({
 
               {isRoot && canEdit ? (
                 <p className="mt-4 text-sm text-[#0A3D45]/65">
-                  Open a folder to add tasks. All Tasks lists everything by urgency.
+                  Open a folder to add tasks. All Tasks lists everything by status.
                 </p>
               ) : null}
             </div>
