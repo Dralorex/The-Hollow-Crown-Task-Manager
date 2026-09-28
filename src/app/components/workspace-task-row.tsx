@@ -418,6 +418,7 @@ export function WorkspaceTaskRow({
   publicTagOptions = [],
   privateTagOptions = [],
   urgencyChips,
+  assignableMembers = [],
 }: {
   workspaceId: string;
   task: WorkspaceTaskData;

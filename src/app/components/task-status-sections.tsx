@@ -3,6 +3,7 @@
 import { useState } from "react";
 import {
   WorkspaceTaskRow,
+  type AssignableMember,
   type WorkspaceTaskData,
 } from "@/app/components/workspace-task-row";
 import type { UrgencyChipPrefs } from "@/app/components/task-ui";
@@ -77,6 +78,8 @@ export function TaskStatusSections({
   publicTagOptions = [],
   privateTagOptions = [],
   urgencyChips,
+  assignableMembers = [],
+  emptyMessage,
 }: {
   workspaceId: string;
   userId: string;
@@ -87,6 +90,8 @@ export function TaskStatusSections({
   publicTagOptions?: string[];
   privateTagOptions?: string[];
   urgencyChips?: UrgencyChipPrefs;
+  assignableMembers?: AssignableMember[];
+  emptyMessage?: string;
 }) {
   const grouped: Record<SectionId, WorkspaceTaskData[]> = {
     unclaimed: [],
@@ -102,7 +107,8 @@ export function TaskStatusSections({
   if (tasks.length === 0) {
     return (
       <p className="text-sm text-[#0A3D45]/60">
-        {isRoot ? "No tasks in this workspace yet." : "No tasks here yet."}
+        {emptyMessage ??
+          (isRoot ? "No tasks in this workspace yet." : "No tasks here yet.")}
       </p>
     );
   }
@@ -132,6 +138,7 @@ export function TaskStatusSections({
                   publicTagOptions={publicTagOptions}
                   privateTagOptions={privateTagOptions}
                   urgencyChips={urgencyChips}
+                  assignableMembers={assignableMembers}
                 />
               ))
             )}

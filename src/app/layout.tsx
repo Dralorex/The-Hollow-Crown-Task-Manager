@@ -2,6 +2,7 @@ import type { Metadata } from "next";
 import { Fraunces, Nunito } from "next/font/google";
 import { cookies } from "next/headers";
 import { SpeedInsights } from "@vercel/speed-insights/next";
+import { MobileViewportReset } from "@/app/components/mobile-viewport-reset";
 import { THEME_COOKIE, LEGACY_THEME_COOKIE, THEME_MIGRATION_COOKIE, parseDisplayTheme } from "@/lib/theme";
 import "./globals.css";
 
@@ -38,6 +39,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
       className={`${display.variable} ${body.variable} h-full antialiased`}
     >
       <body className="min-h-full flex flex-col">
+        <MobileViewportReset />
         {children}
         <SpeedInsights />
       </body>
