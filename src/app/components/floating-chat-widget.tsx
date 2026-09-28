@@ -11,6 +11,10 @@ import {
 } from "@/app/actions/floating-chat";
 import { sendMessageAction } from "@/app/actions/social";
 import { MarkChatSeen } from "@/app/components/mark-chat-seen";
+import {
+  useLiveBadges,
+  useRealtimeEnabled,
+} from "@/app/components/realtime-provider";
 import { useActivePolling } from "@/lib/use-active-polling";
 
 const STORAGE_KEY = "rowgon.chat.widget";
@@ -83,6 +87,12 @@ export function FloatingChatWidget({
   const pathname = usePathname();
   const hideOnChatPage = pathname.startsWith("/app/chat");
   const pollingActive = useActivePolling();
+  const realtimeEnabled = useRealtimeEnabled();
+  const live = useLiveBadges({
+    unreadCount: 0,
+    chatUnreadCount,
+  });
+  const bubbleCount = live.chatUnreadCount;
 
   const [ready, setReady] = useState(false);
   const [open, setOpen] = useState(false);
@@ -186,8 +196,9 @@ export function FloatingChatWidget({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, open, hideOnChatPage]);
 
-  // Soft-poll thread + list while open (paused when tab hidden / user idle).
+  // Soft-poll only when Ably is not configured (paused when tab hidden / idle).
   useEffect(() => {
+    if (realtimeEnabled) return;
     if (!ready || !open || hideOnChatPage || !pollingActive) return;
     const id = window.setInterval(() => {
       void refreshList();
@@ -205,6 +216,33 @@ export function FloatingChatWidget({
     open,
     hideOnChatPage,
     pollingActive,
+    realtimeEnabled,
+    view,
+    thread?.id,
+    lastGroupId,
+    refreshList,
+  ]);
+
+  // Instant chat updates from Ably (works on any /app page, not only /app/chat).
+  useEffect(() => {
+    if (!realtimeEnabled || !ready || hideOnChatPage) return;
+    const onChatRefresh = () => {
+      void refreshList();
+      if (view === "thread" && (thread?.id || lastGroupId)) {
+        void loadFloatingChatThreadAction(thread?.id ?? lastGroupId!).then(
+          (result) => {
+            if (result.ok) setThread(result.thread);
+          },
+        );
+      }
+    };
+    window.addEventListener("rowgon:chat-refresh", onChatRefresh);
+    return () =>
+      window.removeEventListener("rowgon:chat-refresh", onChatRefresh);
+  }, [
+    realtimeEnabled,
+    ready,
+    hideOnChatPage,
     view,
     thread?.id,
     lastGroupId,
@@ -299,10 +337,10 @@ export function FloatingChatWidget({
   };
 
   const badge =
-    chatUnreadCount > 0
-      ? chatUnreadCount > 99
+    bubbleCount > 0
+      ? bubbleCount > 99
         ? "99+"
-        : String(chatUnreadCount)
+        : String(bubbleCount)
       : null;
 
   const headerTitle =

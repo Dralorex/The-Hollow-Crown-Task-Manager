@@ -3,6 +3,10 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
+import {
+  pushBadgesForUsers,
+  pushRefreshForUsers,
+} from "@/lib/ably-server";
 import { handleBirthdayOnFriendship } from "@/lib/birthday";
 import { prisma } from "@/lib/db";
 import { canCreateGroups, requireMembership } from "@/lib/permissions";
@@ -568,6 +572,12 @@ export async function sendMessageAction(
     });
   }
 
+  const memberIds = group.members.map((m) => m.userId);
+  await Promise.all([
+    pushRefreshForUsers(memberIds, ["/app/chat"]),
+    pushBadgesForUsers(recipients),
+  ]);
+
   revalidatePath("/app/chat");
   revalidatePath("/app/notifications");
   revalidatePath("/app", "layout");
@@ -861,6 +871,8 @@ export async function markChatNotificationsReadAction(
     },
     data: { read: true },
   });
+
+  await pushBadgesForUsers([user.id]);
 
   revalidatePath("/app/chat");
   revalidatePath("/app/notifications");
