@@ -1,3 +1,4 @@
+import { pushAlertInboxForUsers } from "@/lib/ably-server";
 import {
   DEADLINE_NOTIFY_DATE_MIN,
   daysUntilDue,
@@ -84,4 +85,6 @@ export async function syncDeadlineNotifications(userId: string) {
       };
     }),
   });
+
+  await pushAlertInboxForUsers([userId]);
 }

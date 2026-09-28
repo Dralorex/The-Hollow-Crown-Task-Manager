@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
+import { pushAlertInboxForUsers } from "@/lib/ably-server";
 import { prisma } from "@/lib/db";
 import type { ActionResult } from "@/app/actions/auth";
 
@@ -15,6 +16,7 @@ export async function markAllNotificationsReadAction(): Promise<void> {
     },
     data: { read: true },
   });
+  await pushAlertInboxForUsers([user.id]);
   revalidatePath("/app", "layout");
   revalidatePath("/app/notifications");
 }
@@ -32,6 +34,7 @@ export async function markNotificationReadAction(
     data: { read: true },
   });
 
+  await pushAlertInboxForUsers([user.id]);
   revalidatePath("/app", "layout");
   revalidatePath("/app/notifications");
   return { ok: true };

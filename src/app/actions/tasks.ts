@@ -2,6 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
+import {
+  pushAlertInboxForUsers,
+  pushRefreshForUsers,
+} from "@/lib/ably-server";
 import { syncCalendarForTask } from "@/lib/calendar";
 import { prisma } from "@/lib/db";
 import {
@@ -579,6 +583,10 @@ export async function forceUnclaimTaskAction(
   });
 
   await syncCalendarForTask(taskId);
+  await Promise.all([
+    pushAlertInboxForUsers([assigneeId]),
+    pushRefreshForUsers([assigneeId, user.id], [`/app/w/${workspaceId}`]),
+  ]);
   revalidatePath(`/app/w/${workspaceId}`);
   revalidatePath("/app/notifications");
   revalidatePath("/app", "layout");
@@ -641,6 +649,14 @@ export async function completeTaskAction(
   });
 
   await syncCalendarForTask(taskId);
+  const reviewUserIds = ownersAndAdmins.map((m) => m.userId);
+  await Promise.all([
+    pushAlertInboxForUsers(reviewUserIds),
+    pushRefreshForUsers(
+      [...reviewUserIds, user.id],
+      [`/app/w/${workspaceId}`],
+    ),
+  ]);
   revalidatePath(`/app/w/${workspaceId}`);
   revalidatePath("/app/notifications");
   revalidatePath("/app", "layout");
@@ -709,6 +725,13 @@ export async function reviewTaskAction(
   }
 
   await syncCalendarForTask(taskId);
+  const notifyIds = [user.id, task.assigneeId].filter(Boolean) as string[];
+  await Promise.all([
+    task.assigneeId
+      ? pushAlertInboxForUsers([task.assigneeId])
+      : Promise.resolve(),
+    pushRefreshForUsers(notifyIds, [`/app/w/${workspaceId}`]),
+  ]);
   revalidatePath(`/app/w/${workspaceId}`);
   revalidatePath("/app/notifications");
   revalidatePath("/app", "layout");

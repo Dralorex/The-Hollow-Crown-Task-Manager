@@ -2,6 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { requireUser } from "@/lib/auth";
+import { pushAlertInboxForUsers } from "@/lib/ably-server";
 import {
   birthdayFromMonthDay,
   birthdayParts,
@@ -322,6 +323,8 @@ export async function respondWorkspaceBirthdayRequestAction(
       data: { read: true },
     });
   }
+
+  await pushAlertInboxForUsers([request.subjectId, user.id]);
 
   revalidatePath("/app/notifications");
   revalidatePath("/app/calendar");

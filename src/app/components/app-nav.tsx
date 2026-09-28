@@ -7,6 +7,7 @@ import {
   AppHamburgerMenu,
   type NavAccount,
 } from "@/app/components/account-nav-controls";
+import { useLiveBadges } from "@/app/components/realtime-provider";
 
 type NavKey =
   | "home"
@@ -93,6 +94,7 @@ export function AppNav({
   accounts?: NavAccount[];
 }) {
   const pathname = usePathname();
+  const live = useLiveBadges({ unreadCount, chatUnreadCount });
 
   const active: NavKey = pathname.startsWith("/app/notifications")
     ? "notifications"
@@ -111,8 +113,8 @@ export function AppNav({
                 : "home";
 
   const badgeFor = (kind?: "chat" | "notifications") => {
-    if (kind === "chat") return chatUnreadCount;
-    if (kind === "notifications") return unreadCount;
+    if (kind === "chat") return live.chatUnreadCount;
+    if (kind === "notifications") return live.unreadCount;
     return 0;
   };
 

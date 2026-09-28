@@ -3,6 +3,11 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
+import {
+  pushAlertInboxForUsers,
+  pushBadgesForUsers,
+  pushRefreshForUsers,
+} from "@/lib/ably-server";
 import { handleBirthdayOnFriendship } from "@/lib/birthday";
 import { prisma } from "@/lib/db";
 import { canCreateGroups, requireMembership } from "@/lib/permissions";
@@ -70,6 +75,8 @@ export async function sendFriendRequestAction(
     },
   });
 
+  await pushAlertInboxForUsers([other.id]);
+
   revalidatePath("/app/social");
   revalidatePath("/app/notifications");
   revalidatePath("/app", "layout");
@@ -123,6 +130,10 @@ export async function respondFriendRequestAction(
     },
     data: { read: true },
   });
+
+  await pushAlertInboxForUsers(
+    accept ? [friendship.requesterId, user.id] : [user.id],
+  );
 
   revalidatePath("/app/social");
   revalidatePath("/app/chat");
@@ -205,6 +216,10 @@ async function openOrMessageDirect(
         meta: JSON.stringify({ groupId, fromUserId: user.id }),
       },
     });
+    await Promise.all([
+      pushBadgesForUsers([other.id]),
+      pushRefreshForUsers([other.id, user.id], ["/app/chat"]),
+    ]);
   }
 
   return groupId;
@@ -276,6 +291,11 @@ export async function requestWorkspaceDmAction(
       }),
     },
   });
+
+  await Promise.all([
+    pushBadgesForUsers([other.id]),
+    pushRefreshForUsers([other.id], ["/app/chat"]),
+  ]);
 
   revalidatePath("/app/chat");
   revalidatePath("/app/notifications");
@@ -567,6 +587,14 @@ export async function sendMessageAction(
       })),
     });
   }
+
+  const memberIds = group.members.map((m) => m.userId);
+  await Promise.all([
+    pushRefreshForUsers(memberIds, ["/app/chat"]),
+    recipients.length > 0
+      ? pushBadgesForUsers(recipients)
+      : Promise.resolve(),
+  ]);
 
   revalidatePath("/app/chat");
   revalidatePath("/app/notifications");
@@ -861,6 +889,11 @@ export async function markChatNotificationsReadAction(
     },
     data: { read: true },
   });
+
+  await Promise.all([
+    pushBadgesForUsers([user.id]),
+    pushRefreshForUsers([user.id], ["/app/chat"]),
+  ]);
 
   revalidatePath("/app/chat");
   revalidatePath("/app/notifications");
