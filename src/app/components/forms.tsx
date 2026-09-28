@@ -73,6 +73,7 @@ export function InlineActionForm({
   children,
   className,
   successMessage,
+  submitVariant = "secondary",
   submitClassName,
   onSuccess,
 }: {
@@ -81,12 +82,17 @@ export function InlineActionForm({
   children: React.ReactNode;
   className?: string;
   successMessage?: string;
+  submitVariant?: "primary" | "secondary";
   submitClassName?: string;
   /** Called after a successful action result (e.g. reset local fields). */
   onSuccess?: () => void;
 }) {
   const [state, formAction] = useActionState(action, null);
   const handledSuccess = useRef<ActionResult | null>(null);
+  const submitBase =
+    submitVariant === "primary"
+      ? "tide-btn-primary text-sm"
+      : "tide-btn-secondary text-sm";
 
   useEffect(() => {
     if (!state?.ok || !onSuccess) return;
@@ -110,7 +116,7 @@ export function InlineActionForm({
       ) : null}
       <SubmitButton
         label={submitLabel}
-        className={`tide-btn-secondary text-sm ${submitClassName ?? ""}`.trim()}
+        className={`${submitBase} ${submitClassName ?? ""}`.trim()}
       />
     </form>
   );

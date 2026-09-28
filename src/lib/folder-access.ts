@@ -11,6 +11,8 @@ export type FolderAccessRow = {
   hideFromUnauthorized: boolean;
   /** Always show in the tree; overrides hide rules. Does not grant access. */
   alwaysVisible: boolean;
+  /** Anyone may open this folder even when roles are set. */
+  alwaysAccessible: boolean;
   /** True when any required role has hideFolders enabled. */
   roleHidesFolder: boolean;
 };
@@ -22,6 +24,7 @@ export type FolderVisibility = {
   requiredRoleIds: string[];
   hideFromUnauthorized: boolean;
   alwaysVisible: boolean;
+  alwaysAccessible: boolean;
   roleHidesFolder: boolean;
   /** User may open this folder and see its contents. */
   canAccess: boolean;
@@ -55,7 +58,8 @@ function isPrivilegedViewer(membershipRole?: Role | null) {
 }
 
 /**
- * Access requires matching roles on this folder AND every ancestor.
+ * Access requires matching roles on this folder AND every ancestor,
+ * unless a folder is marked alwaysAccessible (skips that folder’s role gate).
  * Owner/Admin bypass role gates.
  */
 export function canAccessFolder(
@@ -73,7 +77,10 @@ export function canAccessFolder(
   while (current) {
     if (seen.has(current.id)) break;
     seen.add(current.id);
-    if (!userMatchesFolderRoles(userRoleIds, current.requiredRoleIds)) {
+    if (
+      !current.alwaysAccessible &&
+      !userMatchesFolderRoles(userRoleIds, current.requiredRoleIds)
+    ) {
       return false;
     }
     current = current.parentId
@@ -84,6 +91,7 @@ export function canAccessFolder(
 }
 
 function shouldHideUnauthorized(folder: FolderAccessRow): boolean {
+  if (folder.alwaysAccessible) return false;
   if (folder.alwaysVisible) return false;
   return folder.hideFromUnauthorized || folder.roleHidesFolder;
 }
@@ -91,6 +99,7 @@ function shouldHideUnauthorized(folder: FolderAccessRow): boolean {
 /**
  * Visibility:
  * - Owner/Admin see everything they can reach (parents ok).
+ * - alwaysAccessible grants open access despite roles (and keeps the folder visible).
  * - alwaysVisible forces show even when hide rules apply (still locked if no access).
  * - hideFromUnauthorized or required-role hideFolders → omit unauthorized folders.
  * - Otherwise locked folders remain visible; descendants of inaccessible parents do not.
@@ -148,6 +157,7 @@ export async function loadFolderAccessRows(
     requiredRoleIds: f.requiredRoles.map((r) => r.roleId),
     hideFromUnauthorized: f.hideFromUnauthorized,
     alwaysVisible: f.alwaysVisible,
+    alwaysAccessible: f.alwaysAccessible,
     roleHidesFolder: f.requiredRoles.some((r) => r.role.hideFolders),
   }));
 }

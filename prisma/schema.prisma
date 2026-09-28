@@ -53,6 +53,12 @@ enum DmRequestStatus {
   DECLINED
 }
 
+enum ChatNotifyMode {
+  ALL
+  MENTIONS
+  MUTE
+}
+
 model User {
   id           String   @id @default(cuid())
   username     String   @unique
@@ -66,6 +72,9 @@ model User {
   /** Always prompt before sharing birthday with a new friend/workspace. */
   askBeforeShareBirthday Boolean @default(true)
   showBirthdaysOnCalendar Boolean @default(true)
+  /** Opt-in weekly email of due / review / claimed work */
+  weeklyDigestEnabled Boolean @default(true)
+  weeklyDigestLastSentAt DateTime?
   /** Soft-delete: username is freed; chats keep history labeled with deletedUsername. */
   deletedAt             DateTime?
   deletedUsername       String?
@@ -102,6 +111,8 @@ model User {
   notifications         Notification[]
   groupsCreated         ChatGroup[]          @relation("GroupCreator")
   workspaceRoleSeens    WorkspaceRoleSeen[]
+  taskActivities        TaskActivity[]       @relation("TaskActivityActor")
+  messageMentions       MessageMention[]     @relation("MentionedUser")
 
   @@index([deletedAt])
 }
@@ -178,6 +189,13 @@ model Workspace {
   showUrgencyTotal Boolean @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+  /** Soft-delete / archive — null means active */
+  archivedAt DateTime?
+  archivedById String?
+  /** all | roles | members — who (besides Admin+) can still open it */
+  archiveVisibility String?
+  archiveVisibilityRoles String?
+  archiveVisibilityUserIds String?
 
   owner       User         @relation("WorkspaceOwner", fields: [ownerId], references: [id])
   memberships Membership[]
@@ -190,8 +208,10 @@ model Workspace {
   birthdayRequests WorkspaceBirthdayRequest[]
   calendarFilters CalendarWorkspaceFilter[]
   customRoles WorkspaceRole[]
+  folderTemplates FolderTemplate[]
 
   @@index([ownerId])
+  @@index([archivedAt])
 }
 
 model Membership {
@@ -297,8 +317,16 @@ model Folder {
   hideFromUnauthorized Boolean @default(false)
   /** Always show in the tree regardless of role hide rules. Does not grant access. */
   alwaysVisible        Boolean @default(false)
+  /** Anyone may open this folder even when roles are set. Does not change ancestors. */
+  alwaysAccessible     Boolean @default(false)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+  archivedAt  DateTime?
+  archivedById String?
+  /** all | roles | members */
+  archiveVisibility String?
+  archiveVisibilityRoles String?
+  archiveVisibilityUserIds String?
 
   workspace     Workspace    @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
   parent        Folder?      @relation("FolderTree", fields: [parentId], references: [id], onDelete: Cascade)
@@ -308,6 +336,22 @@ model Folder {
 
   @@index([workspaceId])
   @@index([parentId])
+  @@index([archivedAt])
+}
+
+/** Saved folder name-trees for a workspace (no tasks). */
+model FolderTemplate {
+  id          String   @id @default(cuid())
+  workspaceId String
+  name        String
+  /** JSON array of { name, children? } nodes */
+  treeJson    String
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId])
 }
 
 model Task {
@@ -328,6 +372,17 @@ model Task {
   lastUnclaimedById String?
   lastSendBackReason String?
   lastSentBackById String?
+  /** daily | weekly | monthly — null means one-off */
+  recurrenceCadence String?
+  /** CSV of weekday ints 0–6 (Sun–Sat) for weekly */
+  recurrenceWeekDays String?
+  /** CSV of month days 1–31 for monthly */
+  recurrenceMonthDays String?
+  /** complete | due | both */
+  recurrenceSpawnMode String?
+  /** same | pool | clear */
+  recurrenceNextAssignee String?
+  recurrenceSeriesId String?
   createdAt         DateTime     @default(now())
   updatedAt         DateTime     @updatedAt
 
@@ -340,11 +395,42 @@ model Task {
   tags           TaskTag[]
   calendarEvents CalendarEvent[]
   rememberedPrivateTags RememberedPrivateTag[]
+  activities     TaskActivity[]
+  checklistItems TaskChecklistItem[]
 
   @@index([workspaceId])
   @@index([folderId])
   @@index([assigneeId])
   @@index([status])
+  @@index([recurrenceSeriesId])
+}
+
+model TaskActivity {
+  id        String   @id @default(cuid())
+  taskId    String
+  actorId   String?
+  type      String
+  message   String
+  createdAt DateTime @default(now())
+
+  task  Task  @relation(fields: [taskId], references: [id], onDelete: Cascade)
+  actor User? @relation("TaskActivityActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([taskId, createdAt])
+}
+
+model TaskChecklistItem {
+  id        String   @id @default(cuid())
+  taskId    String
+  label     String
+  done      Boolean  @default(false)
+  sortOrder Int      @default(0)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  task Task @relation(fields: [taskId], references: [id], onDelete: Cascade)
+
+  @@index([taskId])
 }
 
 model Tag {
@@ -548,12 +634,16 @@ model ChatGroup {
 }
 
 model ChatMember {
-  id           String   @id @default(cuid())
+  id           String         @id @default(cuid())
   groupId      String
   userId       String
-  joinedAt     DateTime @default(now())
+  notifyMode   ChatNotifyMode @default(ALL)
+  joinedAt     DateTime       @default(now())
   /** Heartbeat while the member has this chat open — used to skip noisy notifications. */
   lastActiveAt DateTime?
+  lastSeenAt   DateTime?
+  /** Last keystroke in this chat — cleared after a few seconds of idle */
+  typingAt     DateTime?
 
   group ChatGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
   user  User      @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -587,10 +677,25 @@ model Message {
   body      String
   createdAt DateTime @default(now())
 
-  group  ChatGroup @relation(fields: [groupId], references: [id], onDelete: Cascade)
-  sender User      @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  group    ChatGroup        @relation(fields: [groupId], references: [id], onDelete: Cascade)
+  sender   User             @relation(fields: [senderId], references: [id], onDelete: Cascade)
+  mentions MessageMention[]
 
   @@index([groupId, createdAt])
+}
+
+model MessageMention {
+  id         String  @id @default(cuid())
+  messageId  String
+  kind       String
+  userId     String?
+  roleName   String?
+
+  message Message @relation(fields: [messageId], references: [id], onDelete: Cascade)
+  user    User?   @relation("MentionedUser", fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([messageId])
+  @@index([userId])
 }
 
 model Notification {

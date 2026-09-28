@@ -24,6 +24,8 @@ export function selectorForStep(
     "folder-hide":
       '#workspace-folders input[name="hideFromUnauthorized"]',
     "folder-always": '#workspace-folders input[name="alwaysVisible"]',
+    "folder-accessible":
+      '#workspace-folders input[name="alwaysAccessible"]',
     "folder-submit": '#workspace-folders button[type="submit"]',
     // Folder cards live in the main panel, outside the sidebar Add Folders tab.
     "open-folder": '[data-onboarding="folder-bubble"]',
