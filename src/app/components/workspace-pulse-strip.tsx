@@ -7,6 +7,8 @@ export function WorkspacePulseStrip({
   inbox,
   myClaimedCount,
   needsReviewCount,
+  showPulse = true,
+  showInbox = true,
 }: {
   workspaceId: string;
   counts: {
@@ -20,6 +22,8 @@ export function WorkspacePulseStrip({
   inbox: "mine" | "review" | null;
   myClaimedCount: number;
   needsReviewCount: number;
+  showPulse?: boolean;
+  showInbox?: boolean;
 }) {
   const base = `/app/w/${workspaceId}`;
   const tab = (
@@ -43,9 +47,11 @@ export function WorkspacePulseStrip({
     </Link>
   );
 
+  if (!showPulse && !showInbox) return null;
+
   return (
     <div className="mt-6 space-y-3">
-      {counts ? (
+      {showPulse && counts ? (
         <div className="tide-panel flex flex-wrap items-center gap-x-3 gap-y-2 px-3 py-2.5 sm:px-4">
           <h2 className="shrink-0 font-[family-name:var(--font-display)] text-base text-[#0A3D45] sm:text-lg">
             Pulse
@@ -73,7 +79,7 @@ export function WorkspacePulseStrip({
               </div>
             ))}
           </dl>
-          {canReview && counts.inReview > 0 ? (
+          {canReview && counts.inReview > 0 && showInbox ? (
             <Link
               href={`${base}?inbox=review`}
               className="shrink-0 text-xs font-semibold text-[#1a7a82] underline-offset-2 hover:underline"
@@ -84,18 +90,25 @@ export function WorkspacePulseStrip({
         </div>
       ) : null}
 
-      <div className="flex flex-wrap gap-2">
-        {tab(base, inbox === null, "Folders")}
-        {tab(`${base}?inbox=mine`, inbox === "mine", "My claimed", myClaimedCount)}
-        {canReview
-          ? tab(
-              `${base}?inbox=review`,
-              inbox === "review",
-              "Needs review",
-              needsReviewCount,
-            )
-          : null}
-      </div>
+      {showInbox ? (
+        <div className="flex flex-wrap gap-2">
+          {tab(base, inbox === null, "Folders")}
+          {tab(
+            `${base}?inbox=mine`,
+            inbox === "mine",
+            "My claimed",
+            myClaimedCount,
+          )}
+          {canReview
+            ? tab(
+                `${base}?inbox=review`,
+                inbox === "review",
+                "Needs review",
+                needsReviewCount,
+              )
+            : null}
+        </div>
+      ) : null}
     </div>
   );
 }

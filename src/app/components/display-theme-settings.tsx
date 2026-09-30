@@ -25,12 +25,9 @@ export function DisplayThemeSettings({
 
   return (
     <div className="space-y-6">
-      <div>
-        <h2 className="font-semibold text-[color:var(--tide-deep)]">Display</h2>
-        <p className="mt-1 text-xs text-[color:var(--tide-deep)]/60">
-          Color modes for Rowgon on this device. Cool mode is the default.
-        </p>
-      </div>
+      <p className="text-xs text-[color:var(--tide-deep)]/60">
+        Color modes for Rowgon on this device. Cool mode is the default.
+      </p>
 
       {DISPLAY_THEME_GROUPS.map((group) => {
         const themes = themesInGroup(group.id);

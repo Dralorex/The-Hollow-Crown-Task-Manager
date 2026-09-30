@@ -130,6 +130,8 @@ export function TaskStatusSections({
   assignableMembers = [],
   moveOptions = [],
   emptyMessage,
+  showRecurrenceChip = true,
+  showTaskHistory = true,
 }: {
   workspaceId: string;
   userId: string;
@@ -143,6 +145,8 @@ export function TaskStatusSections({
   assignableMembers?: AssignableMember[];
   moveOptions?: FolderMoveOption[];
   emptyMessage?: string;
+  showRecurrenceChip?: boolean;
+  showTaskHistory?: boolean;
 }) {
   const grouped: Record<SectionId, WorkspaceTaskData[]> = {
     unclaimed: [],
@@ -192,6 +196,8 @@ export function TaskStatusSections({
                   urgencyChips={urgencyChips}
                   assignableMembers={assignableMembers}
                   moveOptions={moveOptions}
+                  showRecurrenceChip={showRecurrenceChip}
+                  showTaskHistory={showTaskHistory}
                 />
               ))
             )}

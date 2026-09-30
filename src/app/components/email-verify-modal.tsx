@@ -98,10 +98,12 @@ export function EmailVerifyModal({
             Verification code
             <input
               inputMode="numeric"
-              pattern="\d{4}"
+              pattern="[0-9]*"
+              enterKeyHint="done"
               maxLength={4}
               required
               autoFocus
+              autoComplete="one-time-code"
               value={code}
               onChange={(e) =>
                 setCode(e.target.value.replace(/\D/g, "").slice(0, 4))

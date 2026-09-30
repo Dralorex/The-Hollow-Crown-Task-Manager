@@ -17,10 +17,19 @@ import { ChatSidebarSection } from "@/app/components/chat-sidebar-section";
 import { WorkspaceMembersPanel } from "@/app/components/workspace-members-panel";
 import { WorkspaceRolesPanel } from "@/app/components/workspace-roles-panel";
 import { UrgencyChipSettings } from "@/app/components/urgency-chip-settings";
+import {
+  PersonalWorkspaceInterfacePanel,
+  WorkspaceInterfaceDefaultsPanel,
+} from "@/app/components/workspace-interface-panels";
 import { RoleActivityNotices } from "@/app/components/role-activity-notices";
 import { MarkRoleActivitySeen } from "@/app/components/mark-role-activity-seen";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
+import {
+  parsePersonalInterfacePrefs,
+  parseWorkspaceInterfaceDefaults,
+  resolveInterfacePrefs,
+} from "@/lib/interface-prefs";
 import { computeFolderTaskCounts, collectSubtreeFolderIds } from "@/lib/folder-counts";
 import {
   buildFolderVisibility,
@@ -362,7 +371,18 @@ export default async function WorkspacePage({
   const canInvite = canManagePeople(membership.role) && !workspaceArchived;
   const canArchive = canManagePeople(membership.role);
   const canManageRoles = canManagePeople(membership.role);
-  const showPulse = canManagePeople(membership.role);
+
+  const personalInterface = parsePersonalInterfacePrefs(user.interfacePrefsJson);
+  const workspaceInterfaceDefaults = parseWorkspaceInterfaceDefaults(
+    workspace.interfaceDefaultsJson,
+  );
+  const ui = resolveInterfacePrefs({
+    personal: personalInterface,
+    workspaceDefaults: workspaceInterfaceDefaults,
+    applyToMembers: workspace.interfaceApplyToMembers,
+  });
+  const showPulse = ui.pulse;
+  const showInboxTabs = ui.inbox;
 
   const roleActivity = await getRoleActivityUnread(
     user.id,
@@ -592,6 +612,7 @@ export default async function WorkspacePage({
         hasRole={workspaceRoles.length > 0}
         canManageRoles={canManageRoles}
         canEdit={canEditBase && !workspaceArchived}
+        enabled={ui.onboarding}
       >
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
@@ -655,16 +676,19 @@ export default async function WorkspacePage({
           </div>
         ) : null}
 
-        <OnboardingChooser />
-        <OnboardingScrollToBlink />
-
-        <WorkspaceSetupChecklist
-          hasFolder={hasFolder}
-          hasTask={hasTask}
-          hasInvite={hasInvite}
-          canInvite={canInvite}
-          inFolder={Boolean(currentFolder)}
-        />
+        {ui.onboarding ? (
+          <>
+            <OnboardingChooser />
+            <OnboardingScrollToBlink />
+            <WorkspaceSetupChecklist
+              hasFolder={hasFolder}
+              hasTask={hasTask}
+              hasInvite={hasInvite}
+              canInvite={canInvite}
+              inFolder={Boolean(currentFolder)}
+            />
+          </>
+        ) : null}
 
         <WorkspacePulseStrip
           workspaceId={workspaceId}
@@ -673,6 +697,8 @@ export default async function WorkspacePage({
           inbox={inbox}
           myClaimedCount={myClaimedCount}
           needsReviewCount={needsReviewCount}
+          showPulse={showPulse}
+          showInbox={showInboxTabs}
         />
 
         {roleActivity.length > 0 ? (
@@ -706,7 +732,7 @@ export default async function WorkspacePage({
               />
             </div>
 
-            {canInvite ? (
+            {canInvite && ui.sidebarInvite ? (
               <div className="tide-panel p-4">
                 <ChatSidebarSection
                   title="Invite"
@@ -741,16 +767,18 @@ export default async function WorkspacePage({
               </div>
             ) : null}
 
-            <WorkspaceRolesPanel
-              workspaceId={workspaceId}
-              roles={workspaceRoles.map((r) => ({
-                id: r.id,
-                name: r.name,
-                memberCount: r._count.members,
-                hideFolders: r.hideFolders,
-              }))}
-              canManage={canManageRoles}
-            />
+            {ui.sidebarRoles ? (
+              <WorkspaceRolesPanel
+                workspaceId={workspaceId}
+                roles={workspaceRoles.map((r) => ({
+                  id: r.id,
+                  name: r.name,
+                  memberCount: r._count.members,
+                  hideFolders: r.hideFolders,
+                }))}
+                canManage={canManageRoles}
+              />
+            ) : null}
 
             <UrgencyChipSettings
               workspaceId={workspaceId}
@@ -760,12 +788,26 @@ export default async function WorkspacePage({
               canManage={canManageRoles}
             />
 
-            <WorkspaceMembersPanel
-              workspaceId={workspaceId}
-              members={memberRows}
-              viewerRole={membership.role}
-              workspaceRoles={roleOptions}
-            />
+            {canManageRoles ? (
+              <WorkspaceInterfaceDefaultsPanel
+                workspaceId={workspaceId}
+                applyToMembers={workspace.interfaceApplyToMembers}
+                defaults={workspaceInterfaceDefaults}
+              />
+            ) : null}
+
+            {user.showInterfaceTogglesInWorkspace ? (
+              <PersonalWorkspaceInterfacePanel prefs={personalInterface} />
+            ) : null}
+
+            {ui.sidebarMembers ? (
+              <WorkspaceMembersPanel
+                workspaceId={workspaceId}
+                members={memberRows}
+                viewerRole={membership.role}
+                workspaceRoles={roleOptions}
+              />
+            ) : null}
           </aside>
 
           <section className="space-y-6">
@@ -835,6 +877,7 @@ export default async function WorkspacePage({
               {!inbox && childFolders.length > 0 ? (
                 <OnboardingFolderBubbles
                   workspaceId={workspaceId}
+                  showStats={ui.folderStats}
                   childFolders={childFolders.map((f) => ({
                     id: f.id,
                     name: f.name,
@@ -877,6 +920,8 @@ export default async function WorkspacePage({
               assignableMembers={assignableMembers}
               moveOptions={taskMoveOptions}
               emptyMessage={emptyMessage}
+              showRecurrenceChip={ui.recurrenceChip}
+              showTaskHistory={ui.taskHistory}
             />
           </section>
         </div>

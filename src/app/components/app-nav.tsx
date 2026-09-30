@@ -26,7 +26,7 @@ const TABS: {
   shortLabel: string;
   badge?: "chat" | "notifications";
 }[] = [
-  { href: "/app", key: "home", label: "Workspaces", shortLabel: "Spaces" },
+  { href: "/app", key: "home", label: "Workspaces", shortLabel: "Workspace" },
   {
     href: "/app/calendar",
     key: "calendar",
@@ -49,7 +49,7 @@ const TABS: {
   {
     href: "/app/notifications",
     key: "notifications",
-    label: "Notifications",
+    label: "Alerts",
     shortLabel: "Alerts",
     badge: "notifications",
   },

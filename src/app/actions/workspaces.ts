@@ -12,6 +12,12 @@ import { requireUser } from "@/lib/auth";
 import { pushAlertInboxForUsers } from "@/lib/ably-server";
 import { handleBirthdayOnWorkspaceJoin } from "@/lib/birthday";
 import { prisma } from "@/lib/db";
+import {
+  INTERFACE_FEATURE_KEYS,
+  parseWorkspaceInterfaceDefaults,
+  serializeWorkspaceInterfaceDefaults,
+  type InterfaceFeatureKey,
+} from "@/lib/interface-prefs";
 import { canManagePeople, isOwnerOnlyAction, requireMembership } from "@/lib/permissions";
 import { isValidEmail, normalizeUsername, personLabel } from "@/lib/utils";
 import type { Role } from "@/generated/prisma/client";
@@ -486,5 +492,67 @@ export async function unarchiveWorkspaceAction(
   revalidatePath(`/app/w/${workspaceId}`);
   revalidatePath("/app", "layout");
   revalidatePath("/app/calendar");
+  return { ok: true };
+}
+
+export async function updateWorkspaceInterfaceApplyAction(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const user = await requireUser();
+  const workspaceId = String(formData.get("workspaceId") ?? "");
+  const membership = await requireMembership(workspaceId, user.id);
+  if (!canManagePeople(membership.role)) {
+    return {
+      ok: false,
+      error: "Only owners and admins can change interface defaults.",
+    };
+  }
+
+  const apply = String(formData.get("apply") ?? "0") === "1";
+  await prisma.workspace.update({
+    where: { id: workspaceId },
+    data: { interfaceApplyToMembers: apply },
+  });
+
+  revalidatePath(`/app/w/${workspaceId}`);
+  return { ok: true };
+}
+
+export async function updateWorkspaceInterfaceDefaultAction(
+  _prev: ActionResult | null,
+  formData: FormData,
+): Promise<ActionResult> {
+  const user = await requireUser();
+  const workspaceId = String(formData.get("workspaceId") ?? "");
+  const membership = await requireMembership(workspaceId, user.id);
+  if (!canManagePeople(membership.role)) {
+    return {
+      ok: false,
+      error: "Only owners and admins can change interface defaults.",
+    };
+  }
+
+  const feature = String(formData.get("feature") ?? "");
+  const enabled = String(formData.get("enabled") ?? "0") === "1";
+  if (!(INTERFACE_FEATURE_KEYS as readonly string[]).includes(feature)) {
+    return { ok: false, error: "Unknown interface feature." };
+  }
+
+  const current = await prisma.workspace.findUniqueOrThrow({
+    where: { id: workspaceId },
+    select: { interfaceDefaultsJson: true },
+  });
+  const defaults = parseWorkspaceInterfaceDefaults(current.interfaceDefaultsJson);
+  defaults[feature as InterfaceFeatureKey] = enabled;
+
+  await prisma.workspace.update({
+    where: { id: workspaceId },
+    data: {
+      interfaceDefaultsJson: serializeWorkspaceInterfaceDefaults(defaults),
+    },
+  });
+
+  revalidatePath(`/app/w/${workspaceId}`);
   return { ok: true };
 }

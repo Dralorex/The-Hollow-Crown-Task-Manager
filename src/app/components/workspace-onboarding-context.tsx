@@ -51,6 +51,7 @@ export function WorkspaceOnboardingProvider({
   hasRole,
   canManageRoles,
   canEdit,
+  enabled = true,
   children,
 }: {
   workspaceId: string;
@@ -61,6 +62,8 @@ export function WorkspaceOnboardingProvider({
   hasRole: boolean;
   canManageRoles: boolean;
   canEdit: boolean;
+  /** Interface pref — when false, no chooser / blinks / prompts. */
+  enabled?: boolean;
   children: React.ReactNode;
 }) {
   const [pref, setPref] = useState<OnboardingPreference>({ status: "unset" });
@@ -248,6 +251,7 @@ export function WorkspaceOnboardingProvider({
     pref.status === "full" || pref.status === "short" ? pref.status : null;
 
   const needsChooser =
+    enabled &&
     ready &&
     canEdit &&
     pref.status === "unset" &&
@@ -258,6 +262,7 @@ export function WorkspaceOnboardingProvider({
   const postTaskStep = step === "task-menu-info";
 
   const active =
+    enabled &&
     ready &&
     canEdit &&
     (pref.status === "full" || pref.status === "short") &&

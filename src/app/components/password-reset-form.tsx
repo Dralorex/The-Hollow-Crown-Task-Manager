@@ -7,6 +7,7 @@ import {
   resetPasswordAction,
   type ActionResult,
 } from "@/app/actions/auth";
+import { EmailShortcutChips } from "@/app/components/email-field";
 import { PasswordFields } from "@/app/components/password-fields";
 
 function SubmitButton({ label }: { label: string }) {
@@ -81,7 +82,8 @@ export function PasswordResetForm() {
               name="code"
               required
               inputMode="numeric"
-              pattern="\d{4}"
+              pattern="[0-9]*"
+              enterKeyHint="done"
               maxLength={4}
               autoComplete="one-time-code"
               placeholder="1234"
@@ -116,6 +118,8 @@ export function PasswordResetForm() {
     );
   }
 
+  const [identifierFocused, setIdentifierFocused] = useState(false);
+
   return (
     <form className="flex w-full flex-col gap-4" action={requestAction}>
       <label className="flex flex-col gap-1 text-sm font-medium text-[#0A3D45]">
@@ -124,10 +128,28 @@ export function PasswordResetForm() {
           name="identifier"
           required
           className="tide-input"
+          autoCapitalize="none"
+          autoCorrect="off"
+          spellCheck={false}
           value={identifier}
-          onChange={(e) => setIdentifier(e.target.value)}
+          onChange={(e) => setIdentifier(e.target.value.toLowerCase())}
+          onInput={(e) => {
+            const el = e.currentTarget;
+            const lower = el.value.toLowerCase();
+            if (el.value !== lower) {
+              el.value = lower;
+              setIdentifier(lower);
+            }
+          }}
+          onFocus={() => setIdentifierFocused(true)}
+          onBlur={() => setIdentifierFocused(false)}
         />
       </label>
+      <EmailShortcutChips
+        value={identifier}
+        onChange={setIdentifier}
+        visible={identifierFocused}
+      />
       {requestState && !requestState.ok ? (
         <p className="rounded-lg bg-[#E85D4C]/12 px-3 py-2 text-sm text-[#9b2f22]">
           {requestState.error}

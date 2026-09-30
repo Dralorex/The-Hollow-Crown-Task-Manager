@@ -29,6 +29,7 @@ export function FolderBubble({
   showActions,
   folderActions,
   blink = false,
+  showStats = true,
 }: {
   workspaceId: string;
   folderId: string;
@@ -42,6 +43,7 @@ export function FolderBubble({
   folderActions: FolderActionsProps;
   /** Slow blue pulse while onboarding asks the user to open a folder. */
   blink?: boolean;
+  showStats?: boolean;
 }) {
   const href = `/app/w/${workspaceId}?folder=${folderId}`;
 
@@ -89,7 +91,13 @@ export function FolderBubble({
             ) : null}
           </span>
         )}
-        <FolderCompletionStats done={done} total={total} unclaimed={unclaimed} />
+        {showStats ? (
+          <FolderCompletionStats
+            done={done}
+            total={total}
+            unclaimed={unclaimed}
+          />
+        ) : null}
       </div>
 
       {showActions ? (

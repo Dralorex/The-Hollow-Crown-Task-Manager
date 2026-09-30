@@ -501,6 +501,8 @@ export function WorkspaceTaskRow({
   urgencyChips,
   assignableMembers = [],
   moveOptions = [],
+  showRecurrenceChip = true,
+  showTaskHistory = true,
 }: {
   workspaceId: string;
   task: WorkspaceTaskData;
@@ -512,6 +514,8 @@ export function WorkspaceTaskRow({
   urgencyChips?: UrgencyChipPrefs;
   assignableMembers?: AssignableMember[];
   moveOptions?: FolderMoveOption[];
+  showRecurrenceChip?: boolean;
+  showTaskHistory?: boolean;
 }) {
   const isClaimed = Boolean(task.assigneeId);
   const isOpenAssigned = task.status === "OPEN" && Boolean(task.assigneeId);
@@ -616,7 +620,7 @@ export function WorkspaceTaskRow({
               dueDate={task.dueDate}
               prefs={urgencyChips}
             />
-            {task.recurrenceCadence ? (
+            {showRecurrenceChip && task.recurrenceCadence ? (
               <span className="rounded-md bg-[#1a7a82]/12 px-2 py-0.5 text-[11px] font-semibold capitalize text-[#0A3D45]/75">
                 ↻ {task.recurrenceCadence}
               </span>
@@ -802,6 +806,7 @@ export function WorkspaceTaskRow({
                 </div>
               ) : null}
 
+              {showTaskHistory ? (
               <div className="mt-3">
                 <button
                   type="button"
@@ -836,6 +841,7 @@ export function WorkspaceTaskRow({
                   </div>
                 ) : null}
               </div>
+              ) : null}
             </>
           ) : null}
         </div>

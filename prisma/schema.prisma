@@ -75,6 +75,13 @@ model User {
   /** Opt-in weekly email of due / review / claimed work */
   weeklyDigestEnabled Boolean @default(true)
   weeklyDigestLastSentAt DateTime?
+  /**
+   * Personal Interface prefs JSON:
+   * { pulse|inbox|folderStats|taskHistory|recurrenceChip|sidebarInvite|sidebarRoles|sidebarMembers|onboarding: "follow"|"show"|"hide" }
+   */
+  interfacePrefsJson String?
+  /** Show personal Follow / Always show / Always hide toggles in workspace sidebar. */
+  showInterfaceTogglesInWorkspace Boolean @default(false)
   /** Soft-delete: username is freed; chats keep history labeled with deletedUsername. */
   deletedAt             DateTime?
   deletedUsername       String?
@@ -187,6 +194,13 @@ model Workspace {
   showUrgencyDate  Boolean @default(false)
   /** Show Total (base + date) urgency chip on task rows. */
   showUrgencyTotal Boolean @default(true)
+  /** When true, interfaceDefaultsJson applies to members on Follow workspace. */
+  interfaceApplyToMembers Boolean @default(false)
+  /**
+   * Workspace Interface defaults JSON (booleans):
+   * { pulse|inbox|folderStats|taskHistory|recurrenceChip|sidebarInvite|sidebarRoles|sidebarMembers|onboarding: true|false }
+   */
+  interfaceDefaultsJson String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
   /** Soft-delete / archive — null means active */
