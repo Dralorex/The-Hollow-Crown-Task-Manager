@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BrandLockup } from "@/app/components/brand-mark";
 import { getCurrentUser } from "@/lib/auth";
 import { redirect } from "next/navigation";
 
@@ -19,9 +20,7 @@ export default async function HomePage() {
 
       <div className="relative mx-auto flex min-h-screen max-w-5xl flex-col px-6 pb-16 pt-8">
         <nav className="flex items-center justify-between animate-tide-rise">
-          <span className="font-[family-name:var(--font-display)] text-2xl tracking-tight text-[#0A3D45]">
-            Rowgon
-          </span>
+          <BrandLockup size="lg" className="text-[#0A3D45]" />
           <div className="flex items-center gap-3">
             <Link href="/login" className="text-sm font-semibold text-[#0A3D45]/80 hover:text-[#0A3D45]">
               Sign in
@@ -33,8 +32,8 @@ export default async function HomePage() {
         </nav>
 
         <section className="flex flex-1 flex-col justify-center gap-8 py-16 md:max-w-2xl">
-          <p className="animate-tide-swell font-[family-name:var(--font-display)] text-6xl leading-[0.95] tracking-tight text-[#0A3D45] sm:text-7xl md:text-8xl">
-            Rowgon
+          <p className="animate-tide-swell text-[#0A3D45]">
+            <BrandLockup size="hero" />
           </p>
           <h1 className="animate-tide-rise-delay max-w-xl font-[family-name:var(--font-display)] text-2xl font-medium leading-snug text-[#0A3D45]/90 sm:text-3xl">
             Work with the tide.

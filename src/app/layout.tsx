@@ -22,6 +22,12 @@ export const metadata: Metadata = {
   title: "Rowgon Task Manager",
   description:
     "Nested folders, urgency that pulls due tasks up, friends, and private chats.",
+  applicationName: "Rowgon",
+  appleWebApp: {
+    title: "Rowgon",
+    capable: true,
+    statusBarStyle: "default",
+  },
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
