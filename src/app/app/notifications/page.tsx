@@ -243,7 +243,7 @@ export default async function NotificationsPage() {
     <main className="mx-auto max-w-3xl px-4 py-10">
       <MarkNotificationsSeen hasUnread={hasUnread} />
       <h1 className="font-[family-name:var(--font-display)] text-4xl text-[#0A3D45]">
-        Notifications
+        Alerts
       </h1>
       <p className="mt-2 text-[#0A3D45]/70">
         Invites, friends, deadlines, role task activity, and task updates. Chat

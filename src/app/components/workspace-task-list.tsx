@@ -24,6 +24,8 @@ export function WorkspaceTaskList({
   assignableMembers = [],
   moveOptions = [],
   emptyMessage,
+  showRecurrenceChip = true,
+  showTaskHistory = true,
 }: {
   workspaceId: string;
   userId: string;
@@ -36,6 +38,8 @@ export function WorkspaceTaskList({
   assignableMembers?: AssignableMember[];
   moveOptions?: FolderMoveOption[];
   emptyMessage?: string;
+  showRecurrenceChip?: boolean;
+  showTaskHistory?: boolean;
 }) {
   const { sortMode, setSortMode, modes, sorted } = useChipAwareTaskSort(
     tasks,
@@ -62,6 +66,8 @@ export function WorkspaceTaskList({
         assignableMembers={assignableMembers}
         moveOptions={moveOptions}
         emptyMessage={emptyMessage}
+        showRecurrenceChip={showRecurrenceChip}
+        showTaskHistory={showTaskHistory}
       />
     </div>
   );

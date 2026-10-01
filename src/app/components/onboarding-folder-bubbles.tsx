@@ -31,9 +31,11 @@ type BubbleFolder = {
 export function OnboardingFolderBubbles({
   workspaceId,
   childFolders,
+  showStats = true,
 }: {
   workspaceId: string;
   childFolders: BubbleFolder[];
+  showStats?: boolean;
 }) {
   const { active, step, blink } = useWorkspaceOnboarding();
   const pointAtFolders = active && step === "open-folder" && blink("folder-bubble");
@@ -54,6 +56,7 @@ export function OnboardingFolderBubbles({
             showActions={f.showActions}
             folderActions={f.folderActions}
             blink={pointAtFolders && !f.locked}
+            showStats={showStats}
           />
         </li>
       ))}
