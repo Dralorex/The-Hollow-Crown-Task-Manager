@@ -7,6 +7,7 @@ import {
   AppHamburgerMenu,
   type NavAccount,
 } from "@/app/components/account-nav-controls";
+import { BrandLockup } from "@/app/components/brand-mark";
 import { useLiveBadges } from "@/app/components/realtime-provider";
 
 type NavKey =
@@ -135,9 +136,10 @@ export function AppNav({
         <div className="flex items-center justify-between gap-3">
           <Link
             href="/app"
-            className="font-[family-name:var(--font-display)] text-lg text-[color:var(--tide-deep)]"
+            className="text-[color:var(--tide-deep)]"
+            aria-label="Rowgon home"
           >
-            Rowgon
+            <BrandLockup size="sm" />
           </Link>
           {accountCluster(true)}
         </div>
@@ -174,9 +176,10 @@ export function AppNav({
       <div className="mx-auto hidden max-w-6xl items-center justify-between gap-4 px-4 py-3 md:flex">
         <Link
           href="/app"
-          className="font-[family-name:var(--font-display)] text-xl text-[color:var(--tide-deep)]"
+          className="text-[color:var(--tide-deep)]"
+          aria-label="Rowgon home"
         >
-          Rowgon
+          <BrandLockup size="md" />
         </Link>
         <nav className="flex flex-wrap items-center gap-1">
           {TABS.map((tab) => {

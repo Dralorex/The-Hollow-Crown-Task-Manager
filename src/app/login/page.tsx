@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { BrandLockup } from "@/app/components/brand-mark";
 import { AuthForm } from "@/app/components/forms";
 import { ShowPasswordField } from "@/app/components/show-password-field";
 import { SignInDurationFields } from "@/app/components/sign-in-duration-fields";
@@ -24,9 +25,10 @@ export default async function LoginPage({
       <div className="tide-panel w-full max-w-md p-8 animate-tide-rise">
         <Link
           href={addingAccount ? "/app/accounts" : "/"}
-          className="font-[family-name:var(--font-display)] text-2xl text-[color:var(--tide-deep)]"
+          className="text-[color:var(--tide-deep)]"
+          aria-label="Rowgon home"
         >
-          Rowgon
+          <BrandLockup size="lg" />
         </Link>
         <h1 className="mt-4 font-[family-name:var(--font-display)] text-3xl text-[color:var(--tide-deep)]">
           {addingAccount ? "Add an account" : "Welcome back"}
