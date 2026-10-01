@@ -1,6 +1,5 @@
 "use server";
 
-import { redirect } from "next/navigation";
 import { revalidatePath } from "next/cache";
 import { createSession, getCurrentUser, parseSignInDuration, requireUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
@@ -60,9 +59,6 @@ export async function verifyEmailCodeAction(
 ): Promise<ActionResult> {
   const code = String(formData.get("code") ?? "").trim();
   const pendingSignupId = String(formData.get("pendingSignupId") ?? "").trim();
-  const nextRaw = String(formData.get("next") ?? "").trim();
-  const next =
-    nextRaw.startsWith("/") && !nextRaw.startsWith("//") ? nextRaw : "/app";
 
   if (!/^\d{6}$/.test(code)) {
     return { ok: false, error: "Enter the 6-digit code from your email." };
@@ -123,20 +119,26 @@ export async function verifyEmailCodeAction(
       duration: parseSignInDuration(pending.signInDuration),
     });
 
-    const content = welcomeAccountEmail({
-      username: user.username,
-      nickname: user.nickname,
-    });
-    await sendEmail({
-      to: pending.email,
-      subject: content.subject,
-      html: content.html,
-      text: content.text,
-    });
+    // Welcome mail is best-effort — never fail signup after the account exists.
+    try {
+      const content = welcomeAccountEmail({
+        username: user.username,
+        nickname: user.nickname,
+      });
+      await sendEmail({
+        to: pending.email,
+        subject: content.subject,
+        html: content.html,
+        text: content.text,
+      });
+    } catch (err) {
+      console.error("[rowgon:signup:welcome]", err);
+    }
 
     revalidatePath("/app", "layout");
-    const redirectAfter = String(formData.get("redirectAfter") ?? "") === "true";
-    if (redirectAfter) redirect(next);
+    // Do not redirect() here — this action is called from client
+    // startTransition (EmailVerifyModal). A server redirect surfaces as a
+    // 500 / “This page couldn’t load” error. Callers navigate with router.
     return { ok: true, emailVerified: true };
   }
 
@@ -175,25 +177,25 @@ export async function verifyEmailCodeAction(
   });
   await prisma.emailVerification.delete({ where: { id: pending.id } });
 
-  const content = welcomeAccountEmail({
-    username: updated.username,
-    nickname: updated.nickname,
-  });
-  await sendEmail({
-    to: pending.email,
-    subject: content.subject,
-    html: content.html,
-    text: content.text,
-  });
+  try {
+    const content = welcomeAccountEmail({
+      username: updated.username,
+      nickname: updated.nickname,
+    });
+    await sendEmail({
+      to: pending.email,
+      subject: content.subject,
+      html: content.html,
+      text: content.text,
+    });
+  } catch (err) {
+    console.error("[rowgon:email:welcome]", err);
+  }
 
   revalidatePath("/app", "layout");
   revalidatePath("/app/profile");
 
-  const redirectAfter = String(formData.get("redirectAfter") ?? "") === "true";
-  if (redirectAfter) {
-    redirect(next);
-  }
-
+  // Client modal navigates / refreshes — never redirect() from here.
   return { ok: true, emailVerified: true };
 }
 

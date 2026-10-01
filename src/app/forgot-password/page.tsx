@@ -15,7 +15,7 @@ export default function ForgotPasswordPage() {
           Reset password
         </h1>
         <p className="mt-2 text-sm text-[#0A3D45]/70">
-          Enter your username or email. We’ll send a 4-digit code so you can
+          Enter your username or email. We’ll send a 6-digit code so you can
           choose a new password on this site.
         </p>
 

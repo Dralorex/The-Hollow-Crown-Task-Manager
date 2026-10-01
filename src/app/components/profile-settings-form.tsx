@@ -94,8 +94,8 @@ export function ProfileSettingsForm({
         <h3 className="font-semibold text-[#0A3D45]">Email</h3>
         <p className="mt-1 text-xs text-[#0A3D45]/60">
           {email
-            ? "Change your email anytime. We’ll send a 4-digit code to confirm the new address."
-            : "Add an email, then enter the 4-digit code we send to verify it."}{" "}
+            ? "Change your email anytime. We’ll send a 6-digit code to confirm the new address."
+            : "Add an email, then enter the 6-digit code we send to verify it."}{" "}
           Check your spam folder if the code doesn’t arrive.
         </p>
         {email ? (

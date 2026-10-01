@@ -97,7 +97,7 @@ export function SignUpForm({
           name="email"
           value={email}
           placeholder="you@example.com"
-          hint="Add an email to verify with a 4-digit code and enable password resets. Tap @gmail then .com for a quick fill."
+          hint="Add an email to verify with a 6-digit code and enable password resets. Tap @gmail then .com for a quick fill."
           onChange={(next) => {
             setEmail(next);
             if (next.trim()) {
@@ -174,7 +174,6 @@ export function SignUpForm({
         <EmailVerifyModal
           email={verifyEmail}
           next={next ?? "/app"}
-          redirectAfter
           pendingSignupId={pendingSignupId ?? undefined}
           onVerified={() => router.push(next ?? "/app")}
         />

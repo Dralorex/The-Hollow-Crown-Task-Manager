@@ -9,14 +9,12 @@ import {
 export function EmailVerifyModal({
   email,
   next,
-  redirectAfter = false,
   pendingSignupId,
   onVerified,
   onClose,
 }: {
   email: string;
   next?: string;
-  redirectAfter?: boolean;
   /** When set, verification completes a pending signup (no session yet). */
   pendingSignupId?: string;
   onVerified?: () => void;
@@ -42,14 +40,21 @@ export function EmailVerifyModal({
       const fd = new FormData();
       fd.set("code", code.trim());
       if (next) fd.set("next", next);
-      if (redirectAfter) fd.set("redirectAfter", "true");
       if (pendingSignupId) fd.set("pendingSignupId", pendingSignupId);
-      const result = await verifyEmailCodeAction(null, fd);
-      if (result && !result.ok) {
-        setError(result.error);
-        return;
+      // Never ask the action to redirect — client navigation via onVerified.
+      // Server redirect() from a startTransition call surfaces as a 500 /
+      // “This page couldn’t load” error in the browser.
+      try {
+        const result = await verifyEmailCodeAction(null, fd);
+        if (result && !result.ok) {
+          setError(result.error);
+          return;
+        }
+        onVerified?.();
+      } catch {
+        // Session cookie may already be set; still advance.
+        onVerified?.();
       }
-      onVerified?.();
     });
   }
 
@@ -86,8 +91,10 @@ export function EmailVerifyModal({
           Verify your email
         </h2>
         <p className="mt-3 text-sm leading-relaxed text-[#0A3D45]/80">
-          We sent a 4-digit code to <strong>{email}</strong>. Enter it below to
-          {pendingSignupId ? " finish creating your account." : " confirm this address."}
+          We sent a 6-digit code to <strong>{email}</strong>. Enter it below to
+          {pendingSignupId
+            ? " finish creating your account."
+            : " confirm this address."}
         </p>
         <p className="mt-2 text-xs text-[#0A3D45]/60">
           Check your spam folder if the code doesn’t arrive.
@@ -100,16 +107,16 @@ export function EmailVerifyModal({
               inputMode="numeric"
               pattern="[0-9]*"
               enterKeyHint="done"
-              maxLength={4}
+              maxLength={6}
               required
               autoFocus
               autoComplete="one-time-code"
               value={code}
               onChange={(e) =>
-                setCode(e.target.value.replace(/\D/g, "").slice(0, 4))
+                setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
               }
               className="tide-input tracking-[0.35em] text-center text-xl"
-              placeholder="••••"
+              placeholder="••••••"
             />
           </label>
 
@@ -118,7 +125,7 @@ export function EmailVerifyModal({
 
           <button
             type="submit"
-            disabled={pending || code.length !== 4}
+            disabled={pending || code.length !== 6}
             className="tide-btn-primary disabled:opacity-50"
           >
             {pending

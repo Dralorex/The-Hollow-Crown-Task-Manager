@@ -120,35 +120,52 @@ export async function signUpAction(
 
   // With email: hold the signup until the code is verified — don't create the User yet.
   if (email) {
-    const issued = await issuePendingSignup({
-      username,
-      passwordHash,
-      email,
-      nickname: nicknameValue,
-      signInDuration: String(duration),
-    });
-    if (!issued.ok) {
-      return { ok: false, error: issued.error };
+    try {
+      const issued = await issuePendingSignup({
+        username,
+        passwordHash,
+        email,
+        nickname: nicknameValue,
+        signInDuration: String(duration),
+      });
+      if (!issued.ok) {
+        return { ok: false, error: issued.error };
+      }
+      return {
+        ok: true,
+        needsEmailVerification: true,
+        email: issued.email,
+        emailed: !issued.mocked,
+        pendingSignupId: issued.pendingId,
+      };
+    } catch (err) {
+      console.error("[rowgon:signup:pending]", err);
+      return {
+        ok: false,
+        error:
+          "Couldn’t start email verification. Check that email works, then try again.",
+      };
     }
-    return {
-      ok: true,
-      needsEmailVerification: true,
-      email: issued.email,
-      emailed: !issued.mocked,
-      pendingSignupId: issued.pendingId,
-    };
   }
 
-  const user = await prisma.user.create({
-    data: {
-      username,
-      passwordHash,
-      email: null,
-      nickname: nicknameValue,
-    },
-  });
+  try {
+    const user = await prisma.user.create({
+      data: {
+        username,
+        passwordHash,
+        email: null,
+        nickname: nicknameValue,
+      },
+    });
 
-  await createSession(user.id, { duration });
+    await createSession(user.id, { duration });
+  } catch (err) {
+    console.error("[rowgon:signup:create]", err);
+    return {
+      ok: false,
+      error: "Couldn’t create that account. Try a different username.",
+    };
+  }
   redirect(next ?? "/app");
 }
 

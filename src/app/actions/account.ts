@@ -7,7 +7,7 @@ import { prisma } from "@/lib/db";
 import { issueEmailVerification } from "@/lib/email-verification";
 import type { ActionResult } from "@/app/actions/auth";
 
-/** Step 1: email a 4-digit code confirming account deletion. */
+/** Step 1: email a 6-digit code confirming account deletion. */
 export async function requestAccountDeletionAction(
   _prev: ActionResult | null,
   _formData: FormData,
@@ -55,8 +55,8 @@ export async function confirmAccountDeletionAction(
 ): Promise<ActionResult> {
   const user = await requireUser();
   const code = String(formData.get("code") ?? "").trim();
-  if (!/^\d{4}$/.test(code)) {
-    return { ok: false, error: "Enter the 4-digit code from your email." };
+  if (!/^\d{6}$/.test(code)) {
+    return { ok: false, error: "Enter the 6-digit code from your email." };
   }
 
   const pending = await prisma.emailVerification.findUnique({
