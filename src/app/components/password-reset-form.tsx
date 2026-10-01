@@ -24,7 +24,7 @@ function SubmitButton({ label }: { label: string }) {
 }
 
 /**
- * Two-step reset: send a 4-digit email code, then enter code + new password
+ * Two-step reset: send a 6-digit email code, then enter code + new password
  * on the website (no email link).
  */
 export function PasswordResetForm() {
@@ -54,7 +54,7 @@ export function PasswordResetForm() {
     return (
       <div className="flex w-full flex-col gap-4">
         <p className="text-sm text-[#0A3D45]/75">
-          Enter the 4-digit code we sent
+          Enter the 6-digit code we sent
           {identifier ? (
             <>
               {" "}
@@ -70,7 +70,7 @@ export function PasswordResetForm() {
           </p>
         ) : (
           <p className="rounded-lg bg-[#3DBEAB]/15 px-3 py-2 text-sm text-[#0A3D45]">
-            If that account has an email, we sent a 4-digit code. Check your
+            If that account has an email, we sent a 6-digit code. Check your
             inbox (and spam).
           </p>
         )}
@@ -84,12 +84,12 @@ export function PasswordResetForm() {
               inputMode="numeric"
               pattern="[0-9]*"
               enterKeyHint="done"
-              maxLength={4}
+              maxLength={6}
               autoComplete="one-time-code"
-              placeholder="1234"
+              placeholder="123456"
               className="tide-input tracking-[0.35em]"
               onChange={(e) => {
-                e.target.value = e.target.value.replace(/\D/g, "").slice(0, 4);
+                e.target.value = e.target.value.replace(/\D/g, "").slice(0, 6);
               }}
             />
           </label>

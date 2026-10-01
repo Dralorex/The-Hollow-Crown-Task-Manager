@@ -28,7 +28,7 @@ export function DeleteAccountPanel() {
       }
       setCodeSent(true);
       setEmail(result && result.ok ? (result.email ?? null) : null);
-      setInfo("Check your inbox — and your spam folder — for the 4-digit code.");
+      setInfo("Check your inbox — and your spam folder — for the 6-digit code.");
     });
   }
 
@@ -70,7 +70,7 @@ export function DeleteAccountPanel() {
       ) : (
         <div className="mt-4 space-y-3">
           <p className="text-sm font-medium text-[#0A3D45]">
-            Are you sure? We’ll email a 4-digit code to confirm.
+            Are you sure? We’ll email a 6-digit code to confirm.
           </p>
           {!codeSent ? (
             <div className="flex flex-wrap gap-2">
@@ -103,20 +103,20 @@ export function DeleteAccountPanel() {
               ) : null}
               <input
                 inputMode="numeric"
-                pattern="\d{4}"
-                maxLength={4}
+                pattern="[0-9]*"
+                maxLength={6}
                 required
                 value={code}
                 onChange={(e) =>
-                  setCode(e.target.value.replace(/\D/g, "").slice(0, 4))
+                  setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
                 }
                 className="tide-input tracking-[0.3em] text-center text-lg"
-                placeholder="••••"
+                placeholder="••••••"
               />
               <div className="flex flex-wrap gap-2">
                 <button
                   type="submit"
-                  disabled={pending || code.length !== 4}
+                  disabled={pending || code.length !== 6}
                   className="rounded-md bg-[#9b2f22] px-4 py-2 text-sm font-semibold text-white disabled:opacity-60"
                 >
                   {pending ? "Deleting…" : "Confirm delete"}
