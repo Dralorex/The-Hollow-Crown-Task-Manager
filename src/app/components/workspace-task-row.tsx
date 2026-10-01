@@ -577,7 +577,7 @@ export function WorkspaceTaskRow({
   return (
     <li
       className={`tide-panel relative overflow-hidden p-4 pl-5 transition ${
-        expanded ? "" : "cursor-pointer"
+        expanded ? "pb-20 sm:pb-4" : "cursor-pointer"
       }`}
       onClick={expandFromEmptySpace}
     >
@@ -620,7 +620,9 @@ export function WorkspaceTaskRow({
                 {expanded ? "▾" : "▸"}
               </span>
             </span>
-            <h3 className="text-lg font-semibold text-[#0A3D45]">{task.name}</h3>
+            <h3 className="min-w-0 break-words text-lg font-semibold text-[#0A3D45]">
+              {task.name}
+            </h3>
             <UrgencyChips
               priority={task.priority}
               dueDate={task.dueDate}
@@ -974,9 +976,9 @@ export function WorkspaceTaskRow({
               ) : null}
 
               {task.status === "IN_REVIEW" && canEdit ? (
-                <div className="flex flex-wrap justify-end gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
                   <InlineActionForm
-                    className="flex flex-row items-center gap-2"
+                    className="flex w-full flex-row items-center gap-2 sm:w-auto"
                     action={reviewTaskAction}
                     submitLabel="Approve"
                   >
@@ -996,25 +998,24 @@ export function WorkspaceTaskRow({
               ) : null}
 
               {canClaim ? (
-                <div className="flex justify-end">
-                  <InlineActionForm
-                    className="flex flex-row items-center gap-2"
-                    action={claimTaskAction}
-                    submitLabel={claimLabel}
-                  >
-                    <input
-                      type="hidden"
-                      name="workspaceId"
-                      value={workspaceId}
-                    />
-                    <input type="hidden" name="taskId" value={task.id} />
-                  </InlineActionForm>
-                </div>
+                <InlineActionForm
+                  className="flex w-full flex-col gap-2"
+                  action={claimTaskAction}
+                  submitLabel={claimLabel}
+                  submitClassName="w-full"
+                >
+                  <input
+                    type="hidden"
+                    name="workspaceId"
+                    value={workspaceId}
+                  />
+                  <input type="hidden" name="taskId" value={task.id} />
+                </InlineActionForm>
               ) : null}
 
               {task.assigneeId === userId &&
               (task.status === "CLAIMED" || task.status === "OPEN") ? (
-                <div className="flex justify-end">
+                <div className="w-full">
                   <UnclaimTaskControl
                     workspaceId={workspaceId}
                     taskId={task.id}
