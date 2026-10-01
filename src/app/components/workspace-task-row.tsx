@@ -577,14 +577,20 @@ export function WorkspaceTaskRow({
   return (
     <li
       className={`tide-panel relative overflow-hidden p-4 pl-5 transition ${
-        expanded ? "" : "cursor-pointer"
+        expanded ? "pb-20 sm:pb-4" : "cursor-pointer"
       }`}
       onClick={expandFromEmptySpace}
     >
       <TaskUrgencyEdge priority={task.priority} dueDate={task.dueDate} />
 
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0 flex-1">
+      <div
+        className={
+          expanded
+            ? "flex flex-col items-stretch gap-3"
+            : "flex flex-wrap items-start justify-between gap-3"
+        }
+      >
+        <div className={expanded ? "min-w-0 w-full" : "min-w-0 flex-1"}>
           <div
             className={
               expanded
@@ -614,7 +620,9 @@ export function WorkspaceTaskRow({
                 {expanded ? "▾" : "▸"}
               </span>
             </span>
-            <h3 className="text-lg font-semibold text-[#0A3D45]">{task.name}</h3>
+            <h3 className="min-w-0 break-words text-lg font-semibold text-[#0A3D45]">
+              {task.name}
+            </h3>
             <UrgencyChips
               priority={task.priority}
               dueDate={task.dueDate}
@@ -846,7 +854,13 @@ export function WorkspaceTaskRow({
           ) : null}
         </div>
 
-        <div className="flex max-w-full shrink-0 flex-col items-end gap-2">
+        <div
+          className={
+            expanded
+              ? "flex w-full min-w-0 flex-col items-stretch gap-2"
+              : "flex max-w-full shrink-0 flex-col items-end gap-2"
+          }
+        >
           {!expanded && canClaim ? (
             <div
               className="flex flex-wrap items-center justify-end gap-2"
@@ -871,7 +885,7 @@ export function WorkspaceTaskRow({
 
           {expanded ? (
             <div
-              className="flex w-full max-w-xs flex-col items-stretch gap-2 sm:w-72"
+              className="flex w-full min-w-0 flex-col items-stretch gap-2"
               onClick={(e) => e.stopPropagation()}
             >
               {task.tags.length > 0 ? (
@@ -962,9 +976,9 @@ export function WorkspaceTaskRow({
               ) : null}
 
               {task.status === "IN_REVIEW" && canEdit ? (
-                <div className="flex flex-wrap justify-end gap-2">
+                <div className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:justify-end">
                   <InlineActionForm
-                    className="flex flex-row items-center gap-2"
+                    className="flex w-full flex-row items-center gap-2 sm:w-auto"
                     action={reviewTaskAction}
                     submitLabel="Approve"
                   >
@@ -984,25 +998,24 @@ export function WorkspaceTaskRow({
               ) : null}
 
               {canClaim ? (
-                <div className="flex justify-end">
-                  <InlineActionForm
-                    className="flex flex-row items-center gap-2"
-                    action={claimTaskAction}
-                    submitLabel={claimLabel}
-                  >
-                    <input
-                      type="hidden"
-                      name="workspaceId"
-                      value={workspaceId}
-                    />
-                    <input type="hidden" name="taskId" value={task.id} />
-                  </InlineActionForm>
-                </div>
+                <InlineActionForm
+                  className="flex w-full flex-col gap-2"
+                  action={claimTaskAction}
+                  submitLabel={claimLabel}
+                  submitClassName="w-full"
+                >
+                  <input
+                    type="hidden"
+                    name="workspaceId"
+                    value={workspaceId}
+                  />
+                  <input type="hidden" name="taskId" value={task.id} />
+                </InlineActionForm>
               ) : null}
 
               {task.assigneeId === userId &&
               (task.status === "CLAIMED" || task.status === "OPEN") ? (
-                <div className="flex justify-end">
+                <div className="w-full">
                   <UnclaimTaskControl
                     workspaceId={workspaceId}
                     taskId={task.id}
