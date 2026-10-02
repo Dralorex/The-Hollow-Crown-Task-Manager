@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { AppLink } from "@/app/components/app-link";
 import { FolderActions } from "@/app/components/folder-actions";
 import { FolderCompletionStats } from "@/app/components/folder-completion-stats";
 
@@ -60,8 +60,9 @@ export function FolderBubble({
       }`}
     >
       {!locked ? (
-        <Link
+        <AppLink
           href={href}
+          pending="sheen"
           data-onboarding={blink ? "folder-bubble" : undefined}
           className="absolute inset-0 z-0 rounded-lg"
           aria-label={`Open folder ${name}`}

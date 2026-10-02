@@ -1,9 +1,9 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
-import Link from "next/link";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
+import { AppLink } from "@/app/components/app-link";
 import { InlineActionForm } from "@/app/components/forms";
 import { MenuSurface, menuItemClass } from "@/app/components/menu-surface";
 import { blinkRing } from "@/app/components/onboarding-prompt";
@@ -671,12 +671,13 @@ export function WorkspaceTaskRow({
               {isRoot && task.folder ? (
                 <p className="mt-2 text-xs text-[#0A3D45]/55">
                   In{" "}
-                  <Link
+                  <AppLink
                     href={`/app/w/${workspaceId}?folder=${task.folderId}`}
-                    className="font-semibold underline-offset-2 hover:underline"
+                    className="inline-flex items-center gap-1 font-semibold underline-offset-2 hover:underline"
+                    compactPending
                   >
                     {task.folder.name}
-                  </Link>
+                  </AppLink>
                 </p>
               ) : null}
               {task.description ? (

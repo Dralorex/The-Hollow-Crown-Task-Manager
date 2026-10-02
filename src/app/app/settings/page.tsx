@@ -6,7 +6,7 @@ import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
 import { parsePersonalInterfacePrefs } from "@/lib/interface-prefs";
 import { THEME_COOKIE, LEGACY_THEME_COOKIE, THEME_MIGRATION_COOKIE, parseDisplayTheme } from "@/lib/theme";
-import Link from "next/link";
+import { AppLink } from "@/app/components/app-link";
 
 export default async function SettingsPage() {
   const user = await getCurrentUser();
@@ -33,9 +33,13 @@ export default async function SettingsPage() {
       </h1>
       <p className="mt-2 text-sm text-[color:var(--tide-deep)]/65">
         App preferences for this device and account. Profile details stay under{" "}
-        <Link href="/app/profile" className="font-semibold underline-offset-2 hover:underline">
+        <AppLink
+          href="/app/profile"
+          className="inline-flex items-center gap-1 font-semibold underline-offset-2 hover:underline"
+          compactPending
+        >
           Profile
-        </Link>
+        </AppLink>
         .
       </p>
 

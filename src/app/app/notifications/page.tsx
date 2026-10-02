@@ -1,4 +1,3 @@
-import Link from "next/link";
 import { format } from "date-fns";
 import {
   acceptInviteAction,
@@ -12,6 +11,7 @@ import {
   respondBirthdaySharePromptAction,
   respondWorkspaceBirthdayRequestAction,
 } from "@/app/actions/birthday";
+import { AppLink } from "@/app/components/app-link";
 import { InlineActionForm } from "@/app/components/forms";
 import { MarkNotificationsSeen } from "@/app/components/mark-notifications-seen";
 import { RoleActivityNotices } from "@/app/components/role-activity-notices";
@@ -361,12 +361,13 @@ export default async function NotificationsPage() {
                       {format(n.createdAt, "MMM d · HH:mm")}
                     </p>
                     {deepLink ? (
-                      <Link
+                      <AppLink
                         href={deepLink}
-                        className="mt-2 inline-block text-sm font-semibold text-[#0A3D45] underline-offset-2 hover:underline"
+                        className="mt-2 inline-flex items-center gap-1 text-sm font-semibold text-[#0A3D45] underline-offset-2 hover:underline"
+                        compactPending
                       >
                         Open →
-                      </Link>
+                      </AppLink>
                     ) : null}
                   </div>
 

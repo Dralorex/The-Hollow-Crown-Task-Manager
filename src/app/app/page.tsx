@@ -4,7 +4,7 @@ import { WorkspaceCardMenu } from "@/app/components/workspace-card-menu";
 import { canViewArchived, isArchived } from "@/lib/archive";
 import { getCurrentUser } from "@/lib/auth";
 import { prisma } from "@/lib/db";
-import Link from "next/link";
+import { AppLink } from "@/app/components/app-link";
 
 export default async function AppHomePage() {
   const user = await getCurrentUser();
@@ -80,7 +80,11 @@ export default async function AppHomePage() {
             style={{ animationDelay: `${i * 60}ms` }}
           >
             <div className="flex items-start justify-between gap-2">
-              <Link href={`/app/w/${m.workspaceId}`} className="min-w-0 flex-1">
+              <AppLink
+                href={`/app/w/${m.workspaceId}`}
+                pending="sheen"
+                className="relative min-w-0 flex-1 rounded-lg"
+              >
                 <div className="flex flex-wrap items-center gap-2">
                   <p className="font-[family-name:var(--font-display)] text-2xl text-[#0A3D45]">
                     {m.workspace.name}
@@ -94,7 +98,7 @@ export default async function AppHomePage() {
                 <p className="mt-2 text-sm capitalize text-[#0A3D45]/60">
                   {m.role.toLowerCase()}
                 </p>
-              </Link>
+              </AppLink>
               <WorkspaceCardMenu
                 workspaceId={m.workspaceId}
                 workspaceName={m.workspace.name}
@@ -124,10 +128,11 @@ export default async function AppHomePage() {
           </p>
           <div className="mt-4 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
             {archived.map((m) => (
-              <Link
+              <AppLink
                 key={m.id}
                 href={`/app/w/${m.workspaceId}`}
-                className="tide-panel block border border-[#0A3D45]/10 bg-white/50 p-5 opacity-90 transition hover:opacity-100"
+                pending="sheen"
+                className="tide-panel relative block border border-[#0A3D45]/10 bg-white/50 p-5 opacity-90 transition hover:opacity-100"
               >
                 <p className="font-[family-name:var(--font-display)] text-xl text-[#0A3D45]">
                   {m.workspace.name}
@@ -135,7 +140,7 @@ export default async function AppHomePage() {
                 <p className="mt-2 text-xs uppercase tracking-wide text-[#0A3D45]/50">
                   Archived · {m.role.toLowerCase()}
                 </p>
-              </Link>
+              </AppLink>
             ))}
           </div>
         </section>
@@ -147,20 +152,21 @@ export default async function AppHomePage() {
             <h2 className="font-[family-name:var(--font-display)] text-2xl text-[#0A3D45]">
               Incoming
             </h2>
-            <Link
+            <AppLink
               href="/app/notifications"
-              className="text-sm font-semibold text-[#0A3D45] underline-offset-2 hover:underline"
+              className="inline-flex items-center gap-1 text-sm font-semibold text-[#0A3D45] underline-offset-2 hover:underline"
+              compactPending
             >
               View all
-            </Link>
+            </AppLink>
           </div>
           <ul className="mt-4 space-y-2">
             {notifications.map((n) => (
               <li key={n.id} className="tide-panel px-4 py-3 text-sm">
-                <Link href="/app/notifications" className="block">
+                <AppLink href="/app/notifications" pending="sheen" className="relative block rounded-md">
                   <span className="font-semibold text-[#0A3D45]">{n.title}</span>
                   <span className="text-[#0A3D45]/70"> — {n.body}</span>
-                </Link>
+                </AppLink>
               </li>
             ))}
           </ul>

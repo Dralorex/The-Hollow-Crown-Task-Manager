@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type ReactNode } from "react";
-import Link from "next/link";
+import { AppLink } from "@/app/components/app-link";
 import { InlineActionForm } from "@/app/components/forms";
 import { StartHereWorkspaceGlow } from "@/app/components/start-here-workspace-glow";
 import { createWorkspaceAction } from "@/app/actions/workspaces";

@@ -1,8 +1,7 @@
-import Link from "next/link";
 import { format } from "date-fns";
+import { AppLink } from "@/app/components/app-link";
 import { InlineActionForm } from "@/app/components/forms";
-import { ChatMessageBody } from "@/app/components/chat-composer";
-import { ChatPresenceStrip } from "@/app/components/chat-presence";
+import { ChatMessageBody } from "@/app/components/chat-composer";import { ChatPresenceStrip } from "@/app/components/chat-presence";
 import { ChatRowMenu } from "@/app/components/chat-row-menu";
 import { ChatThreadView } from "@/app/components/chat-thread-view";
 import { MarkChatSeen } from "@/app/components/mark-chat-seen";
@@ -435,9 +434,10 @@ export default async function ChatPage({
               Choose Groups, Workspace groups, or DMs to browse conversations.
             </p>
             <div className="mt-8 flex flex-col gap-3">
-              <Link
+              <AppLink
                 href={listHref("groups")}
-                className="group flex items-center justify-between rounded-lg border border-[#0A3D45]/12 bg-[#0A3D45]/[0.03] px-4 py-5 transition hover:border-[#0A3D45]/25 hover:bg-[#0A3D45]/[0.06]"
+                pending="sheen"
+                className="group relative flex items-center justify-between rounded-lg border border-[#0A3D45]/12 bg-[#0A3D45]/[0.03] px-4 py-5 transition hover:border-[#0A3D45]/25 hover:bg-[#0A3D45]/[0.06]"
               >
                 <div>
                   <p className="flex items-center gap-2 font-[family-name:var(--font-display)] text-xl text-[#0A3D45]">
@@ -456,10 +456,11 @@ export default async function ChatPage({
                 <span className="text-[#0A3D45]/40 transition group-hover:text-[#0A3D45]">
                   →
                 </span>
-              </Link>
-              <Link
+              </AppLink>
+              <AppLink
                 href={listHref("workspace-groups")}
-                className="group flex items-center justify-between rounded-lg border border-[#0A3D45]/12 bg-[#0A3D45]/[0.03] px-4 py-5 transition hover:border-[#0A3D45]/25 hover:bg-[#0A3D45]/[0.06]"
+                pending="sheen"
+                className="group relative flex items-center justify-between rounded-lg border border-[#0A3D45]/12 bg-[#0A3D45]/[0.03] px-4 py-5 transition hover:border-[#0A3D45]/25 hover:bg-[#0A3D45]/[0.06]"
               >
                 <div>
                   <p className="flex items-center gap-2 font-[family-name:var(--font-display)] text-xl text-[#0A3D45]">
@@ -480,10 +481,11 @@ export default async function ChatPage({
                 <span className="text-[#0A3D45]/40 transition group-hover:text-[#0A3D45]">
                   →
                 </span>
-              </Link>
-              <Link
+              </AppLink>
+              <AppLink
                 href={listHref("dms")}
-                className="group flex items-center justify-between rounded-lg border border-[#0A3D45]/12 bg-[#0A3D45]/[0.03] px-4 py-5 transition hover:border-[#0A3D45]/25 hover:bg-[#0A3D45]/[0.06]"
+                pending="sheen"
+                className="group relative flex items-center justify-between rounded-lg border border-[#0A3D45]/12 bg-[#0A3D45]/[0.03] px-4 py-5 transition hover:border-[#0A3D45]/25 hover:bg-[#0A3D45]/[0.06]"
               >
                 <div>
                   <p className="flex items-center gap-2 font-[family-name:var(--font-display)] text-xl text-[#0A3D45]">
@@ -504,7 +506,7 @@ export default async function ChatPage({
                 <span className="text-[#0A3D45]/40 transition group-hover:text-[#0A3D45]">
                   →
                 </span>
-              </Link>
+              </AppLink>
             </div>
           </div>
         ) : null}
@@ -513,12 +515,13 @@ export default async function ChatPage({
         !active ? (
           <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
             <div className="flex shrink-0 items-center gap-3">
-              <Link
+              <AppLink
                 href="/app/chat"
-                className="text-sm text-[#0A3D45]/60 hover:underline"
+                className="inline-flex items-center gap-1 text-sm text-[#0A3D45]/60 hover:underline"
+                compactPending
               >
                 ← Back
-              </Link>
+              </AppLink>
             </div>
             <h1 className="mt-2 shrink-0 font-[family-name:var(--font-display)] text-2xl text-[#0A3D45]">
               {listTitle}
@@ -532,9 +535,10 @@ export default async function ChatPage({
                 return (
                   <li key={g.id}>
                     <div className="group relative flex items-stretch rounded-lg border border-[#0A3D45]/10 bg-[#0A3D45]/[0.02] transition hover:border-[#0A3D45]/20 hover:bg-[#0A3D45]/[0.05]">
-                      <Link
+                      <AppLink
                         href={threadHref(tab, g.id)}
-                        className="flex min-w-0 flex-1 items-center gap-3 px-4 py-3"
+                        pending="sheen"
+                        className="relative flex min-w-0 flex-1 items-center gap-3 px-4 py-3"
                       >
                         <div className="min-w-0 flex-1">
                           <div className="flex items-center gap-2">
@@ -558,7 +562,7 @@ export default async function ChatPage({
                               : snippet(undefined)}
                           </p>
                         </div>
-                      </Link>
+                      </AppLink>
                       <div className="flex items-center pr-2">
                         <ChatRowMenu
                           groupId={g.id}
@@ -584,12 +588,13 @@ export default async function ChatPage({
             <MarkChatSeen groupId={active.id} />
             <div className="flex shrink-0 items-start justify-between gap-3">
               <div>
-                <Link
+                <AppLink
                   href={listHref(listKindForGroup(active))}
-                  className="text-sm text-[#0A3D45]/60 hover:underline"
+                  className="inline-flex items-center gap-1 text-sm text-[#0A3D45]/60 hover:underline"
+                  compactPending
                 >
                   ← Back
-                </Link>
+                </AppLink>
                 <h1 className="mt-1 font-[family-name:var(--font-display)] text-2xl text-[#0A3D45]">
                   {active.isDirect
                     ? dmDisplayName(active.members, userId)
