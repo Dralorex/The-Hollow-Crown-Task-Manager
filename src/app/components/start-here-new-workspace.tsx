@@ -1,7 +1,7 @@
 "use client";
 
 import { useRef, useState, type ReactNode } from "react";
-import Link from "next/link";
+import { AppLink } from "@/app/components/app-link";
 import { InlineActionForm } from "@/app/components/forms";
 import { StartHereWorkspaceGlow } from "@/app/components/start-here-workspace-glow";
 import { createWorkspaceAction } from "@/app/actions/workspaces";
@@ -87,12 +87,13 @@ export function StartHereNewWorkspace({
               </p>
               <p className="mt-4 text-sm text-[#0A3D45]/60">
                 Waiting on an invite? You’ll see it under{" "}
-                <Link
+                <AppLink
                   href="/app/notifications"
-                  className="font-semibold underline-offset-2 hover:underline"
+                  className="inline-flex items-center gap-1 font-semibold underline-offset-2 hover:underline"
+                  compactPending
                 >
                   Alerts
-                </Link>
+                </AppLink>
                 .
               </p>
               <p className="mt-5 text-sm font-medium text-[#0A3D45]">

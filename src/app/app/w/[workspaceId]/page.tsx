@@ -1,5 +1,5 @@
 import { redirect } from "next/navigation";
-import Link from "next/link";
+import { AppLink } from "@/app/components/app-link";
 import { InlineActionForm } from "@/app/components/forms";
 import { FolderActions } from "@/app/components/folder-actions";
 import { OnboardingFolderBubbles } from "@/app/components/onboarding-folder-bubbles";
@@ -616,9 +616,13 @@ export default async function WorkspacePage({
       >
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
-            <Link href="/app" className="text-sm text-[#0A3D45]/60 hover:underline">
+            <AppLink
+              href="/app"
+              className="inline-flex items-center gap-1 text-sm text-[#0A3D45]/60 hover:underline"
+              compactPending
+            >
               ← Workspaces
-            </Link>
+            </AppLink>
             <h1 className="mt-1 font-[family-name:var(--font-display)] text-4xl text-[#0A3D45]">
               {workspace.name}
               {workspaceArchived ? (
@@ -813,12 +817,13 @@ export default async function WorkspacePage({
           <section className="space-y-6">
             <div className="tide-panel p-5">
               {backHref && backLabel ? (
-                <Link
+                <AppLink
                   href={backHref}
-                  className="text-sm text-[#0A3D45]/60 hover:underline"
+                  className="inline-flex items-center gap-1 text-sm text-[#0A3D45]/60 hover:underline"
+                  compactPending
                 >
                   ← {backLabel}
-                </Link>
+                </AppLink>
               ) : null}
               <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="font-[family-name:var(--font-display)] text-2xl text-[#0A3D45]">
@@ -831,12 +836,13 @@ export default async function WorkspacePage({
                 </h2>
                 <div className="flex flex-wrap items-center gap-2">
                   {!inbox && currentFolder ? (
-                    <Link
+                    <AppLink
                       href={`/app/w/${workspaceId}`}
-                      className="tide-btn-secondary !px-3 !py-1.5 text-xs"
+                      className="tide-btn-secondary inline-flex items-center gap-1 !px-3 !py-1.5 text-xs"
+                      compactPending
                     >
                       See All Tasks
-                    </Link>
+                    </AppLink>
                   ) : null}
                   {!inbox && canEdit && currentFolder ? (
                     <FolderActions

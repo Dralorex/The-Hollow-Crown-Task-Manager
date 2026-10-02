@@ -1,4 +1,4 @@
-import Link from "next/link";
+import { AppLink } from "@/app/components/app-link";
 
 export function WorkspacePulseStrip({
   workspaceId,
@@ -32,19 +32,20 @@ export function WorkspacePulseStrip({
     label: string,
     count?: number,
   ) => (
-    <Link
+    <AppLink
       href={href}
-      className={`inline-flex min-h-9 items-center justify-center rounded-full px-3 py-1.5 text-sm font-semibold transition ${
+      className={`inline-flex min-h-9 items-center justify-center gap-1 rounded-full px-3 py-1.5 text-sm font-semibold transition ${
         active
           ? "bg-[#0A3D45] text-[#E8F7F6]"
           : "bg-white/50 text-[#0A3D45]/75 hover:bg-white/80"
       }`}
+      compactPending
     >
       {label}
       {typeof count === "number" ? (
-        <span className="ml-1.5 tabular-nums opacity-80">{count}</span>
+        <span className="ml-0.5 tabular-nums opacity-80">{count}</span>
       ) : null}
-    </Link>
+    </AppLink>
   );
 
   if (!showPulse && !showInbox) return null;
@@ -80,12 +81,13 @@ export function WorkspacePulseStrip({
             ))}
           </dl>
           {canReview && counts.inReview > 0 && showInbox ? (
-            <Link
+            <AppLink
               href={`${base}?inbox=review`}
-              className="shrink-0 text-xs font-semibold text-[#1a7a82] underline-offset-2 hover:underline"
+              className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-[#1a7a82] underline-offset-2 hover:underline"
+              compactPending
             >
               Review · {counts.inReview}
-            </Link>
+            </AppLink>
           ) : null}
         </div>
       ) : null}

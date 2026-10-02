@@ -7,6 +7,7 @@ import {
   switchAccountAction,
   signOutCurrentAction,
 } from "@/app/actions/accounts";
+import { AppLink } from "@/app/components/app-link";
 import { MenuSurface, menuItemClass } from "@/app/components/menu-surface";
 
 export type NavAccount = {
@@ -93,15 +94,16 @@ export function AccountSwitcher({
         </Link>
       </MenuSurface>
 
-      <Link
+      <AppLink
         href="/app/profile"
-        className={`min-w-0 truncate underline-offset-2 hover:underline ${
+        className={`inline-flex min-w-0 items-center gap-1 truncate underline-offset-2 hover:underline ${
           compact ? "max-w-[7.5rem] text-xs" : "text-sm"
         } text-[color:var(--tide-deep)]/80`}
         title="Profile"
+        compactPending={compact}
       >
-        {displayLabel}
-      </Link>
+        <span className="truncate">{displayLabel}</span>
+      </AppLink>
     </div>
   );
 }
@@ -134,27 +136,27 @@ export function AppHamburgerMenu({ accounts }: { accounts: NavAccount[] }) {
         </button>
       )}
     >
-      <Link
+      <AppLink
         href="/app/profile"
-        className={menuItemClass()}
+        className={`${menuItemClass()} inline-flex items-center gap-1.5`}
         onClick={() => setOpen(false)}
       >
         Profile
-      </Link>
-      <Link
+      </AppLink>
+      <AppLink
         href="/app/accounts"
-        className={menuItemClass()}
+        className={`${menuItemClass()} inline-flex items-center gap-1.5`}
         onClick={() => setOpen(false)}
       >
         Account
-      </Link>
-      <Link
+      </AppLink>
+      <AppLink
         href="/app/settings"
-        className={menuItemClass()}
+        className={`${menuItemClass()} inline-flex items-center gap-1.5`}
         onClick={() => setOpen(false)}
       >
         Settings
-      </Link>
+      </AppLink>
       <div className="mx-2 my-1 border-t border-[color:var(--tide-deep)]/10" />
       <div className="px-3 py-1 text-[11px] font-semibold uppercase tracking-wide text-[color:var(--tide-deep)]/45">
         Quick switch
