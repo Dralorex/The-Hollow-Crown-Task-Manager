@@ -10,7 +10,6 @@ import {
   sendMessageAction,
   setChatNotifyModeAction,
   setTypingAction,
-  touchChatSeenAction,
 } from "@/app/actions/social";
 import { ChatTypingLine } from "@/app/components/chat-presence";
 import { highlightMessageParts, type TaskLinkInfo } from "@/lib/task-links";
@@ -134,16 +133,7 @@ export function ChatComposer({
     );
   }, [taskOptions, filter]);
 
-  // Mark seen on open; rare heartbeat (no layout revalidate on server).
-  useEffect(() => {
-    const form = new FormData();
-    form.set("groupId", groupId);
-    void touchChatSeenAction(null, form);
-    const id = window.setInterval(() => {
-      void touchChatSeenAction(null, form);
-    }, 120_000);
-    return () => window.clearInterval(id);
-  }, [groupId]);
+  // Seen / presence heartbeats live in MarkChatSeen (one writer per open thread).
 
   function onChange(value: string) {
     setBody(value);
