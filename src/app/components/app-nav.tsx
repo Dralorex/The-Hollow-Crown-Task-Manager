@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 import {
   AccountSwitcher,
@@ -83,6 +84,73 @@ function Badge({
   );
 }
 
+/** Fixed-size pending hint — no layout shift (Next useLinkStatus guidance). */
+function NavPendingHint({ compact }: { compact?: boolean }) {
+  const { pending } = useLinkStatus();
+  return (
+    <span
+      aria-hidden
+      className={`inline-block rounded-full bg-current transition-opacity ${
+        compact ? "h-1 w-1" : "h-1.5 w-1.5"
+      } ${pending ? "animate-pulse opacity-80" : "opacity-0"}`}
+    />
+  );
+}
+
+function NavTabLink({
+  href,
+  isActive,
+  label,
+  shortLabel,
+  count,
+  compact,
+}: {
+  href: string;
+  isActive: boolean;
+  label: string;
+  shortLabel: string;
+  count: number;
+  compact?: boolean;
+}) {
+  if (compact) {
+    return (
+      <Link
+        href={href}
+        prefetch
+        className={`flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-2 text-center transition ${
+          isActive
+            ? "bg-[color:var(--tide-deep)] text-[color:var(--tide-foam)] shadow-sm"
+            : "text-[color:var(--tide-deep)]/75"
+        }`}
+      >
+        <span className="inline-flex max-w-full items-center justify-center gap-0.5">
+          <span className="truncate text-[11px] font-semibold leading-tight">
+            {shortLabel}
+          </span>
+          <Badge count={count} active={isActive} compact />
+          <NavPendingHint compact />
+        </span>
+      </Link>
+    );
+  }
+
+  return (
+    <Link
+      href={href}
+      prefetch
+      className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition ${
+        isActive
+          ? "bg-[color:var(--tide-deep)] text-[color:var(--tide-foam)]"
+          : "text-[color:var(--tide-deep)]/80 hover:bg-[color:var(--tide-deep)]/8"
+      }`}
+    >
+      {label}
+      <Badge count={count} active={isActive} />
+      <NavPendingHint />
+    </Link>
+  );
+}
+
 export function AppNav({
   displayLabel,
   unreadCount = 0,
@@ -136,6 +204,7 @@ export function AppNav({
         <div className="flex items-center justify-between gap-3">
           <Link
             href="/app"
+            prefetch
             className="text-[color:var(--tide-deep)]"
             aria-label="Rowgon home"
           >
@@ -148,58 +217,40 @@ export function AppNav({
           className="mt-2.5 grid grid-cols-5 gap-0.5 rounded-xl bg-[color:var(--tide-deep)]/[0.06] p-1"
           aria-label="Main"
         >
-          {TABS.map((tab) => {
-            const isActive = active === tab.key;
-            const count = badgeFor(tab.badge);
-            return (
-              <Link
-                key={tab.key}
-                href={tab.href}
-                className={`flex min-w-0 flex-col items-center justify-center gap-0.5 rounded-lg px-1 py-2 text-center transition ${
-                  isActive
-                    ? "bg-[color:var(--tide-deep)] text-[color:var(--tide-foam)] shadow-sm"
-                    : "text-[color:var(--tide-deep)]/75"
-                }`}
-              >
-                <span className="inline-flex max-w-full items-center justify-center gap-0.5">
-                  <span className="truncate text-[11px] font-semibold leading-tight">
-                    {tab.shortLabel}
-                  </span>
-                  <Badge count={count} active={isActive} compact />
-                </span>
-              </Link>
-            );
-          })}
+          {TABS.map((tab) => (
+            <NavTabLink
+              key={tab.key}
+              href={tab.href}
+              isActive={active === tab.key}
+              label={tab.label}
+              shortLabel={tab.shortLabel}
+              count={badgeFor(tab.badge)}
+              compact
+            />
+          ))}
         </nav>
       </div>
 
       <div className="mx-auto hidden max-w-6xl items-center justify-between gap-4 px-4 py-3 md:flex">
         <Link
           href="/app"
+          prefetch
           className="text-[color:var(--tide-deep)]"
           aria-label="Rowgon home"
         >
           <BrandLockup size="md" />
         </Link>
         <nav className="flex flex-wrap items-center gap-1">
-          {TABS.map((tab) => {
-            const isActive = active === tab.key;
-            const count = badgeFor(tab.badge);
-            return (
-              <Link
-                key={tab.key}
-                href={tab.href}
-                className={`inline-flex items-center gap-1.5 rounded-full px-3 py-1.5 text-sm transition ${
-                  isActive
-                    ? "bg-[color:var(--tide-deep)] text-[color:var(--tide-foam)]"
-                    : "text-[color:var(--tide-deep)]/80 hover:bg-[color:var(--tide-deep)]/8"
-                }`}
-              >
-                {tab.label}
-                <Badge count={count} active={isActive} />
-              </Link>
-            );
-          })}
+          {TABS.map((tab) => (
+            <NavTabLink
+              key={tab.key}
+              href={tab.href}
+              isActive={active === tab.key}
+              label={tab.label}
+              shortLabel={tab.shortLabel}
+              count={badgeFor(tab.badge)}
+            />
+          ))}
         </nav>
         {accountCluster(false)}
       </div>

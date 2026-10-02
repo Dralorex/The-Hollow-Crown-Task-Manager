@@ -62,25 +62,32 @@ export async function getAccountRoster(): Promise<RosterAccount[]> {
       cookieStore.get(LEGACY_ACCOUNT_ROSTER_COOKIE)?.value,
   );
   const now = Date.now();
-  const valid: RosterAccount[] = [];
+  const valid = (
+    await Promise.all(
+      accounts.map(async (account) => {
+        if (new Date(account.expiresAt).getTime() <= now) return null;
+        const session = await prisma.session.findUnique({
+          where: { token: account.token },
+          include: { user: true },
+        });
+        if (
+          !session ||
+          session.expiresAt < new Date() ||
+          session.user.deletedAt
+        ) {
+          return null;
+        }
+        return {
+          userId: session.user.id,
+          username: session.user.username,
+          label: personLabel(session.user),
+          token: session.token,
+          expiresAt: session.expiresAt.toISOString(),
+        } satisfies RosterAccount;
+      }),
+    )
+  ).filter((a): a is RosterAccount => Boolean(a));
 
-  for (const account of accounts) {
-    if (new Date(account.expiresAt).getTime() <= now) continue;
-    const session = await prisma.session.findUnique({
-      where: { token: account.token },
-      include: { user: true },
-    });
-    if (!session || session.expiresAt < new Date() || session.user.deletedAt) {
-      continue;
-    }
-    valid.push({
-      userId: session.user.id,
-      username: session.user.username,
-      label: personLabel(session.user),
-      token: session.token,
-      expiresAt: session.expiresAt.toISOString(),
-    });
-  }
 
   if (valid.length !== accounts.length) {
     await writeRoster(valid);

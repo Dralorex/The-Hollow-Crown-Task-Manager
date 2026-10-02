@@ -9,7 +9,7 @@ import { getAccountRosterPublic } from "@/lib/account-roster";
 import { getCurrentUser } from "@/lib/auth";
 import { syncBirthdayNotifications } from "@/lib/birthday";
 import { syncDeadlineNotifications } from "@/lib/deadline-notifications";
-import { getNavBadgeCounts } from "@/lib/nav-badges";
+import { getNavBadgeCountsCached } from "@/lib/nav-badges";
 import { personLabel } from "@/lib/utils";
 
 export default async function AppSectionLayout({
@@ -27,7 +27,7 @@ export default async function AppSectionLayout({
   });
 
   const [{ unreadCount, chatUnreadCount }, accounts] = await Promise.all([
-    getNavBadgeCounts(user.id),
+    getNavBadgeCountsCached(user.id),
     getAccountRosterPublic(user.id),
   ]);
 

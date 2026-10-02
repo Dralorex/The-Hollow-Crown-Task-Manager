@@ -1,0 +1,22 @@
+/** Lightweight skeleton shown while a main /app tab streams in. */
+export function AppRouteLoading({
+  label = "Loading",
+}: {
+  label?: string;
+}) {
+  return (
+    <main className="mx-auto max-w-6xl px-4 py-8" aria-busy="true" aria-label={label}>
+      <div className="h-8 w-48 animate-pulse rounded-lg bg-[color:var(--tide-deep)]/10" />
+      <div className="mt-2 h-4 w-72 max-w-full animate-pulse rounded bg-[color:var(--tide-deep)]/8" />
+      <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+        {Array.from({ length: 3 }).map((_, i) => (
+          <div
+            key={i}
+            className="tide-panel h-36 animate-pulse bg-[color:var(--tide-deep)]/[0.04]"
+            style={{ animationDelay: `${i * 80}ms` }}
+          />
+        ))}
+      </div>
+    </main>
+  );
+}
