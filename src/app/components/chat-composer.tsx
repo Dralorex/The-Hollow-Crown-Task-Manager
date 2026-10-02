@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useActionState } from "react";
-import { useFormStatus } from "react-dom";
 import type { ActionResult } from "@/app/actions/auth";
 import {
   clearTypingAction,
@@ -15,6 +14,16 @@ import {
 } from "@/app/actions/social";
 import { ChatTypingLine } from "@/app/components/chat-presence";
 import { highlightMessageParts, type TaskLinkInfo } from "@/lib/task-links";
+
+export type OptimisticThreadMessage = {
+  id: string;
+  body: string;
+  createdAt: string;
+  senderLabel: string;
+  senderId: string;
+  pending?: boolean;
+  failed?: boolean;
+};
 
 type MentionOption =
   | { kind: "user"; label: string; insert: string }
@@ -27,15 +36,6 @@ type TaskOption = {
   workspaceName: string;
   insert: string;
 };
-
-function SubmitButton() {
-  const { pending } = useFormStatus();
-  return (
-    <button type="submit" disabled={pending} className="tide-btn-primary min-h-11 text-sm disabled:opacity-60">
-      {pending ? "…" : "Send"}
-    </button>
-  );
-}
 
 export function ChatMessageBody({
   body,
@@ -86,33 +86,39 @@ export function ChatComposer({
   taskOptions = [],
   memberUsernames = [],
   notifyMode,
+  currentUserId,
+  onOptimisticAppend,
+  onOptimisticConfirm,
+  onOptimisticFail,
 }: {
   groupId: string;
   options: MentionOption[];
   taskOptions?: TaskOption[];
   memberUsernames?: { userId: string; username: string }[];
   notifyMode: "ALL" | "MENTIONS" | "MUTE";
+  currentUserId?: string;
+  onOptimisticAppend?: (msg: OptimisticThreadMessage) => void;
+  onOptimisticConfirm?: (
+    tempId: string,
+    real: {
+      id: string;
+      body: string;
+      createdAt: string;
+      senderLabel: string;
+      senderId: string;
+    },
+  ) => void;
+  onOptimisticFail?: (tempId: string) => void;
 }) {
   const router = useRouter();
   const [body, setBody] = useState("");
   const [picker, setPicker] = useState<"mention" | "task" | null>(null);
   const [filter, setFilter] = useState("");
+  const [sendError, setSendError] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
   const inputRef = useRef<HTMLTextAreaElement>(null);
   const typingTimer = useRef<number | null>(null);
   const lastTypingSent = useRef(0);
-  const [state, formAction] = useActionState(
-    async (prev: ActionResult | null, formData: FormData) => {
-      const result = await sendMessageAction(prev, formData);
-      if (result?.ok) {
-        setBody("");
-        setPicker(null);
-        void clearTypingAction(groupId);
-        router.refresh();
-      }
-      return result;
-    },
-    null,
-  );
 
   const filteredMentions = useMemo(() => {
     const q = filter.toLowerCase();
@@ -128,13 +134,14 @@ export function ChatComposer({
     );
   }, [taskOptions, filter]);
 
+  // Mark seen on open; rare heartbeat (no layout revalidate on server).
   useEffect(() => {
     const form = new FormData();
     form.set("groupId", groupId);
     void touchChatSeenAction(null, form);
     const id = window.setInterval(() => {
       void touchChatSeenAction(null, form);
-    }, 30_000);
+    }, 120_000);
     return () => window.clearInterval(id);
   }, [groupId]);
 
@@ -168,7 +175,6 @@ export function ChatComposer({
       }
     }
 
-    // Typing heartbeat (throttle ~2s)
     if (value.trim()) {
       const now = Date.now();
       if (now - lastTypingSent.current > 2000) {
@@ -208,6 +214,55 @@ export function ChatComposer({
     });
   }
 
+  async function onSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    const trimmed = body.trim();
+    if (!trimmed || sending) return;
+
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const draftSnapshot = trimmed;
+    setSendError(null);
+    setBody("");
+    setPicker(null);
+    void clearTypingAction(groupId);
+
+    onOptimisticAppend?.({
+      id: tempId,
+      body: draftSnapshot,
+      createdAt: new Date().toISOString(),
+      senderLabel: "You",
+      senderId: currentUserId ?? "self",
+      pending: true,
+    });
+
+    // Keep focus; do not block the button on a full reload.
+    requestAnimationFrame(() => inputRef.current?.focus());
+
+    setSending(true);
+    try {
+      const fd = new FormData();
+      fd.set("groupId", groupId);
+      fd.set("body", draftSnapshot);
+      const result = await sendMessageAction(null, fd);
+      if (!result?.ok) {
+        setSendError(
+          result && "error" in result ? result.error : "Send failed.",
+        );
+        setBody(draftSnapshot);
+        onOptimisticFail?.(tempId);
+        return;
+      }
+      onOptimisticConfirm?.(tempId, result.message);
+    } catch {
+      setSendError("Send failed.");
+      setBody(draftSnapshot);
+      onOptimisticFail?.(tempId);
+    } finally {
+      setSending(false);
+      inputRef.current?.focus();
+    }
+  }
+
   const [notifyState, notifyAction] = useActionState(
     async (prev: ActionResult | null, formData: FormData) => {
       const result = await setChatNotifyModeAction(prev, formData);
@@ -220,8 +275,10 @@ export function ChatComposer({
   return (
     <div className="mt-4 space-y-2">
       <ChatTypingLine groupId={groupId} memberUsernames={memberUsernames} />
-      <form action={formAction} className="relative flex flex-col gap-2 sm:flex-row sm:items-end">
-        <input type="hidden" name="groupId" value={groupId} />
+      <form
+        onSubmit={onSubmit}
+        className="relative flex flex-col gap-2 sm:flex-row sm:items-end"
+      >
         <div className="relative min-w-0 flex-1">
           <textarea
             ref={inputRef}
@@ -236,6 +293,12 @@ export function ChatComposer({
                 : "Write a message… use @ to mention"
             }
             className="tide-input min-h-[3.25rem] w-full"
+            onKeyDown={(e) => {
+              if (e.key === "Enter" && !e.shiftKey) {
+                e.preventDefault();
+                void onSubmit(e);
+              }
+            }}
           />
           {picker === "mention" && filteredMentions.length > 0 ? (
             <ul className="absolute bottom-full left-0 z-10 mb-1 max-h-40 w-full overflow-y-auto rounded-xl border border-[#0A3D45]/15 bg-white p-1 shadow-lg">
@@ -277,13 +340,22 @@ export function ChatComposer({
             </ul>
           ) : null}
         </div>
-        <SubmitButton />
+        <button
+          type="submit"
+          disabled={!body.trim()}
+          className="tide-btn-primary min-h-11 text-sm disabled:opacity-60"
+        >
+          Send
+        </button>
       </form>
-      {state && !state.ok ? (
-        <p className="text-sm text-[#9b2f22]">{state.error}</p>
+      {sendError ? (
+        <p className="text-sm text-[#9b2f22]">{sendError}</p>
       ) : null}
 
-      <form action={notifyAction} className="flex flex-wrap items-center gap-2 text-xs text-[#0A3D45]/65">
+      <form
+        action={notifyAction}
+        className="flex flex-wrap items-center gap-2 text-xs text-[#0A3D45]/65"
+      >
         <input type="hidden" name="groupId" value={groupId} />
         <span className="font-semibold">Alerts:</span>
         {(

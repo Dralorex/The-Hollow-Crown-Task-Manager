@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef } from "react";
-import { useRouter } from "next/navigation";
 import {
   clearChatPresenceAction,
   markChatNotificationsReadAction,
@@ -15,7 +14,6 @@ import { useActivePolling } from "@/lib/use-active-polling";
  * Heartbeats pause while the tab is hidden or the user is idle.
  */
 export function MarkChatSeen({ groupId }: { groupId: string }) {
-  const router = useRouter();
   const ranFor = useRef<string | null>(null);
   const active = useActivePolling();
 
@@ -23,9 +21,10 @@ export function MarkChatSeen({ groupId }: { groupId: string }) {
     if (!groupId) return;
     if (ranFor.current !== groupId) {
       ranFor.current = groupId;
-      void markChatNotificationsReadAction(groupId).then(() => router.refresh());
+      // Badge push happens server-side; no full router.refresh.
+      void markChatNotificationsReadAction(groupId);
     }
-  }, [groupId, router]);
+  }, [groupId]);
 
   useEffect(() => {
     if (!groupId || !active) {
@@ -35,7 +34,7 @@ export function MarkChatSeen({ groupId }: { groupId: string }) {
     void pulseChatPresenceAction(groupId);
     const id = window.setInterval(() => {
       void pulseChatPresenceAction(groupId);
-    }, 15_000);
+    }, 45_000);
     return () => {
       window.clearInterval(id);
       void clearChatPresenceAction(groupId);

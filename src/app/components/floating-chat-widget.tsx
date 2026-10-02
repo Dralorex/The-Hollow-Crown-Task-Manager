@@ -15,6 +15,10 @@ import {
   useLiveBadges,
   useRealtimeEnabled,
 } from "@/app/components/realtime-provider";
+import {
+  CHAT_MESSAGE_EVENT,
+  type ChatMessageEvent,
+} from "@/lib/chat-message-events";
 import { useActivePolling } from "@/lib/use-active-polling";
 
 const STORAGE_KEY = "rowgon.chat.widget";
@@ -209,7 +213,7 @@ export function FloatingChatWidget({
           },
         );
       }
-    }, 15_000);
+    }, 45_000);
     return () => window.clearInterval(id);
   }, [
     ready,
@@ -223,31 +227,73 @@ export function FloatingChatWidget({
     refreshList,
   ]);
 
-  // Instant chat updates from Ably (works on any /app page, not only /app/chat).
+  // List refresh hint from Ably — do not reload open thread (message events patch it).
   useEffect(() => {
     if (!realtimeEnabled || !ready || hideOnChatPage) return;
     const onChatRefresh = () => {
       void refreshList();
-      if (view === "thread" && (thread?.id || lastGroupId)) {
-        void loadFloatingChatThreadAction(thread?.id ?? lastGroupId!).then(
-          (result) => {
-            if (result.ok) setThread(result.thread);
-          },
-        );
-      }
     };
     window.addEventListener("rowgon:chat-refresh", onChatRefresh);
     return () =>
       window.removeEventListener("rowgon:chat-refresh", onChatRefresh);
-  }, [
-    realtimeEnabled,
-    ready,
-    hideOnChatPage,
-    view,
-    thread?.id,
-    lastGroupId,
-    refreshList,
-  ]);
+  }, [realtimeEnabled, ready, hideOnChatPage, refreshList]);
+
+  // Payload message events — append to open thread + bump list snippet locally.
+  useEffect(() => {
+    if (!ready || hideOnChatPage) return;
+    const onMessage = (event: Event) => {
+      const detail = (event as CustomEvent<ChatMessageEvent>).detail;
+      if (!detail?.id || !detail.groupId) return;
+
+      setThread((prev) => {
+        if (!prev || prev.id !== detail.groupId) return prev;
+        if (prev.messages.some((m) => m.id === detail.id)) return prev;
+        return {
+          ...prev,
+          messages: [
+            ...prev.messages,
+            {
+              id: detail.id,
+              senderLabel: detail.senderLabel,
+              body: detail.body,
+              createdAt: detail.createdAt,
+              mine: false,
+            },
+          ],
+        };
+      });
+
+      setChats((prev) => {
+        const idx = prev.findIndex((c) => c.id === detail.groupId);
+        if (idx < 0) {
+          void refreshList();
+          return prev;
+        }
+        const next = [...prev];
+        const row = next[idx]!;
+        next[idx] = {
+          ...row,
+          snippet: `${detail.senderLabel}: ${
+            detail.body.length > 64
+              ? `${detail.body.slice(0, 64)}…`
+              : detail.body
+          }`,
+          updatedAt: detail.createdAt,
+          unread:
+            view === "thread" && thread?.id === detail.groupId
+              ? row.unread
+              : row.unread + 1,
+        };
+        next.sort((a, b) => {
+          if (a.closed !== b.closed) return a.closed ? 1 : -1;
+          return b.updatedAt.localeCompare(a.updatedAt);
+        });
+        return next;
+      });
+    };
+    window.addEventListener(CHAT_MESSAGE_EVENT, onMessage);
+    return () => window.removeEventListener(CHAT_MESSAGE_EVENT, onMessage);
+  }, [ready, hideOnChatPage, refreshList, view, thread?.id]);
 
   useEffect(() => {
     if (view !== "thread") return;
@@ -316,20 +362,84 @@ export function FloatingChatWidget({
   const onSend = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!thread || thread.closed || !draft.trim() || sending) return;
-    setSending(true);
+    const bodyText = draft.trim();
+    const tempId = `temp-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+    const createdAt = new Date().toISOString();
+
+    setDraft("");
     setError(null);
+    setThread((prev) =>
+      prev
+        ? {
+            ...prev,
+            messages: [
+              ...prev.messages,
+              {
+                id: tempId,
+                senderLabel: "You",
+                body: bodyText,
+                createdAt,
+                mine: true,
+              },
+            ],
+          }
+        : prev,
+    );
+    setChats((prev) => {
+      const idx = prev.findIndex((c) => c.id === thread.id);
+      if (idx < 0) return prev;
+      const next = [...prev];
+      next[idx] = {
+        ...next[idx]!,
+        snippet: `You: ${bodyText.length > 64 ? `${bodyText.slice(0, 64)}…` : bodyText}`,
+        updatedAt: createdAt,
+        unread: 0,
+      };
+      next.sort((a, b) => {
+        if (a.closed !== b.closed) return a.closed ? 1 : -1;
+        return b.updatedAt.localeCompare(a.updatedAt);
+      });
+      return next;
+    });
+    requestAnimationFrame(() => composerRef.current?.focus());
+
+    setSending(true);
     try {
       const fd = new FormData();
       fd.set("groupId", thread.id);
-      fd.set("body", draft.trim());
+      fd.set("body", bodyText);
       const result = await sendMessageAction(null, fd);
       if (!result?.ok) {
         setError(result && "error" in result ? result.error : "Send failed.");
+        setDraft(bodyText);
+        setThread((prev) =>
+          prev
+            ? {
+                ...prev,
+                messages: prev.messages.filter((m) => m.id !== tempId),
+              }
+            : prev,
+        );
         return;
       }
-      setDraft("");
-      await openThread(thread.id, listTab);
-      await refreshList();
+      setThread((prev) =>
+        prev
+          ? {
+              ...prev,
+              messages: prev.messages.map((m) =>
+                m.id === tempId
+                  ? {
+                      id: result.message.id,
+                      senderLabel: "You",
+                      body: result.message.body,
+                      createdAt: result.message.createdAt,
+                      mine: true,
+                    }
+                  : m,
+              ),
+            }
+          : prev,
+      );
       composerRef.current?.focus();
     } finally {
       setSending(false);
@@ -548,15 +658,14 @@ export function FloatingChatWidget({
                       onChange={(e) => setDraft(e.target.value)}
                       placeholder="Write a message…"
                       className="tide-input flex-1 !py-2 text-sm"
-                      disabled={sending}
                       autoComplete="off"
                     />
                     <button
                       type="submit"
-                      disabled={sending || !draft.trim()}
+                      disabled={!draft.trim()}
                       className="tide-btn-secondary !px-3 !py-2 text-sm disabled:opacity-60"
                     >
-                      {sending ? "…" : "Send"}
+                      Send
                     </button>
                   </form>
                 )}
