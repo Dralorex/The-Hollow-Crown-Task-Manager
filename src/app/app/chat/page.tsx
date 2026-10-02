@@ -1,9 +1,10 @@
 import Link from "next/link";
 import { format } from "date-fns";
 import { InlineActionForm } from "@/app/components/forms";
-import { ChatComposer, ChatMessageBody } from "@/app/components/chat-composer";
+import { ChatMessageBody } from "@/app/components/chat-composer";
 import { ChatPresenceStrip } from "@/app/components/chat-presence";
 import { ChatRowMenu } from "@/app/components/chat-row-menu";
+import { ChatThreadView } from "@/app/components/chat-thread-view";
 import { MarkChatSeen } from "@/app/components/mark-chat-seen";
 import { StartDmForm } from "@/app/components/start-dm-form";
 import { CreateFriendGroupForm } from "@/app/components/create-friend-group-form";
@@ -636,41 +637,53 @@ export default async function ChatPage({
                 addItemNoun={active.workspaceId ? "member" : "friend"}
               />
             </div>
-            <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto">
-              {threadMessages.map((msg) => (
-                <div key={msg.id} className="text-sm">
-                  <span className="font-semibold text-[#0A3D45]">
-                    {personLabel(msg.sender)}
-                  </span>{" "}
-                  <span className="text-xs text-[#0A3D45]/45">
-                    {format(msg.createdAt, "MMM d · HH:mm")}
-                  </span>
-                  <ChatMessageBody body={msg.body} taskMap={taskMap} />
+            {active.closedAt ? (
+              <>
+                <div className="mt-4 min-h-0 flex-1 space-y-3 overflow-y-auto">
+                  {threadMessages.map((msg) => (
+                    <div key={msg.id} className="text-sm">
+                      <span className="font-semibold text-[#0A3D45]">
+                        {personLabel(msg.sender)}
+                      </span>{" "}
+                      <span className="text-xs text-[#0A3D45]/45">
+                        {format(msg.createdAt, "MMM d · HH:mm")}
+                      </span>
+                      <ChatMessageBody body={msg.body} taskMap={taskMap} />
+                    </div>
+                  ))}
+                  {threadMessages.length === 0 ? (
+                    <p className="text-sm text-[#0A3D45]/55">No messages yet.</p>
+                  ) : null}
                 </div>
-              ))}
-              {threadMessages.length === 0 ? (
-                <p className="text-sm text-[#0A3D45]/55">No messages yet.</p>
-              ) : null}
-            </div>
-            <div className="mt-3 shrink-0 border-t border-[#0A3D45]/10 bg-[var(--tide-panel-bg,inherit)] pt-3">
-              {active.closedAt ? (
-                <p className="rounded-md bg-[#0A3D45]/[0.05] px-3 py-2 text-sm text-[#0A3D45]/70">
-                  This chat was closed. You can still read it, but messaging is
-                  off. Start a new DM with them to chat again.
-                </p>
-              ) : myMembership ? (
-                <ChatComposer
-                  groupId={active.id}
-                  options={filteredMentionOptions}
-                  taskOptions={taskOptions}
-                  memberUsernames={active.members.map((m) => ({
-                    userId: m.user.id,
-                    username: m.user.username,
-                  }))}
-                  notifyMode={myMembership.notifyMode}
-                />
-              ) : null}
-            </div>
+                <div className="mt-3 shrink-0 border-t border-[#0A3D45]/10 pt-3">
+                  <p className="rounded-md bg-[#0A3D45]/[0.05] px-3 py-2 text-sm text-[#0A3D45]/70">
+                    This chat was closed. You can still read it, but messaging is
+                    off. Start a new DM with them to chat again.
+                  </p>
+                </div>
+              </>
+            ) : myMembership ? (
+              <ChatThreadView
+                groupId={active.id}
+                currentUserId={userId}
+                initialMessages={threadMessages.map((msg) => ({
+                  id: msg.id,
+                  body: msg.body,
+                  createdAt: msg.createdAt.toISOString(),
+                  senderLabel:
+                    msg.senderId === userId ? "You" : personLabel(msg.sender),
+                  senderId: msg.senderId,
+                }))}
+                taskMap={taskMap}
+                mentionOptions={filteredMentionOptions}
+                taskOptions={taskOptions}
+                memberUsernames={active.members.map((m) => ({
+                  userId: m.user.id,
+                  username: m.user.username,
+                }))}
+                notifyMode={myMembership.notifyMode}
+              />
+            ) : null}
           </>
         ) : null}
       </section>

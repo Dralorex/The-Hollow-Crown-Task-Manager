@@ -7,6 +7,84 @@ import {
   type ChatPresenceMember,
 } from "@/lib/chat-presence";
 
+type PresenceListener = (presence: ChatPresenceMember[]) => void;
+
+type SharedPresence = {
+  listeners: Set<PresenceListener>;
+  presence: ChatPresenceMember[];
+  cleanup: (() => void) | null;
+  refCount: number;
+};
+
+/** One EventSource (or poller) per group across Strip + TypingLine. */
+const shared = new Map<string, SharedPresence>();
+
+const PRESENCE_POLL_MS = 8_000;
+
+function ensurePresence(groupId: string): SharedPresence {
+  let entry = shared.get(groupId);
+  if (entry) return entry;
+
+  entry = {
+    listeners: new Set(),
+    presence: [],
+    cleanup: null,
+    refCount: 0,
+  };
+  shared.set(groupId, entry);
+
+  let cancelled = false;
+  let pollId: number | undefined;
+  let source: EventSource | null = null;
+
+  async function pollOnce() {
+    const result = await fetchChatPresence(groupId);
+    if (cancelled || !result.ok) return;
+    entry!.presence = result.presence;
+    for (const listener of entry!.listeners) listener(result.presence);
+  }
+
+  function startPolling() {
+    void pollOnce();
+    pollId = window.setInterval(() => {
+      void pollOnce();
+    }, PRESENCE_POLL_MS);
+  }
+
+  try {
+    source = new EventSource(`/api/chat/${groupId}/presence`);
+    source.addEventListener("presence", (event) => {
+      if (cancelled) return;
+      try {
+        const data = JSON.parse(
+          (event as MessageEvent).data,
+        ) as ChatPresenceMember[];
+        if (Array.isArray(data)) {
+          entry!.presence = data;
+          for (const listener of entry!.listeners) listener(data);
+        }
+      } catch {
+        // ignore bad payloads
+      }
+    });
+    source.onerror = () => {
+      source?.close();
+      source = null;
+      if (!cancelled && pollId === undefined) startPolling();
+    };
+  } catch {
+    startPolling();
+  }
+
+  entry.cleanup = () => {
+    cancelled = true;
+    source?.close();
+    if (pollId !== undefined) window.clearInterval(pollId);
+  };
+
+  return entry;
+}
+
 function useChatPresence(
   groupId: string,
   memberUsernames: { userId: string; username: string }[],
@@ -20,47 +98,20 @@ function useChatPresence(
   );
 
   useEffect(() => {
-    let cancelled = false;
-    let pollId: number | undefined;
-    let source: EventSource | null = null;
+    const entry = ensurePresence(groupId);
+    entry.refCount += 1;
 
-    async function pollOnce() {
-      const result = await fetchChatPresence(groupId);
-      if (cancelled || !result.ok) return;
-      setPresence(result.presence);
-    }
-
-    function startPolling() {
-      void pollOnce();
-      pollId = window.setInterval(() => {
-        void pollOnce();
-      }, 2500);
-    }
-
-    try {
-      source = new EventSource(`/api/chat/${groupId}/presence`);
-      source.addEventListener("presence", (event) => {
-        if (cancelled) return;
-        try {
-          const data = JSON.parse((event as MessageEvent).data) as ChatPresenceMember[];
-          if (Array.isArray(data)) setPresence(data);
-        } catch {
-          // ignore bad payloads
-        }
-      });
-      source.onerror = () => {
-        source?.close();
-        source = null;
-        if (!cancelled && pollId === undefined) startPolling();
-      };
-    } catch {
-      startPolling();
-    }
+    const listener: PresenceListener = (next) => setPresence(next);
+    entry.listeners.add(listener);
+    if (entry.presence.length) setPresence(entry.presence);
 
     return () => {
-      cancelled = true;
-      source?.close();
-      if (pollId !== undefined) window.clearInterval(pollId);
+      entry.listeners.delete(listener);
+      entry.refCount -= 1;
+      if (entry.refCount <= 0) {
+        entry.cleanup?.();
+        shared.delete(groupId);
+      }
     };
   }, [groupId]);
 

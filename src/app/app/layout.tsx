@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { AppNav } from "@/app/components/app-nav";
 import { FloatingChatWidget } from "@/app/components/floating-chat-widget";
@@ -19,10 +20,11 @@ export default async function AppSectionLayout({
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  await Promise.all([
-    syncDeadlineNotifications(user.id),
-    syncBirthdayNotifications(user.id),
-  ]);
+  // Don't block first paint / every navigation on sync workers.
+  after(() => {
+    void syncDeadlineNotifications(user.id);
+    void syncBirthdayNotifications(user.id);
+  });
 
   const [{ unreadCount, chatUnreadCount }, accounts] = await Promise.all([
     getNavBadgeCounts(user.id),
@@ -33,7 +35,7 @@ export default async function AppSectionLayout({
 
   return (
     <div className="tide-wave-bg min-h-screen">
-      {!ablyEnabled ? <LiveRefresh /> : null}
+      {!ablyEnabled ? <LiveRefresh intervalMs={45_000} /> : null}
       <RealtimeProvider
         userId={user.id}
         enabled={ablyEnabled}

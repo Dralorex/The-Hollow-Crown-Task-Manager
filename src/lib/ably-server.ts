@@ -1,5 +1,7 @@
 import Ably from "ably";
 import { userChannelName } from "@/lib/ably-channels";
+import type { ChatMessageEvent } from "@/lib/chat-message-events";
+import { CHAT_MESSAGE_ABLY } from "@/lib/chat-message-events";
 import { getNavBadgeCounts } from "@/lib/nav-badges";
 
 export function isAblyConfigured(): boolean {
@@ -8,10 +10,17 @@ export function isAblyConfigured(): boolean {
 
 export { userChannelName };
 
+let restSingleton: Ably.Rest | null | undefined;
+
 function getRest(): Ably.Rest | null {
+  if (restSingleton !== undefined) return restSingleton;
   const key = process.env.ABLY_API_KEY?.trim();
-  if (!key) return null;
-  return new Ably.Rest(key);
+  if (!key) {
+    restSingleton = null;
+    return null;
+  }
+  restSingleton = new Ably.Rest(key);
+  return restSingleton;
 }
 
 /** Create a token request scoped to this user's channel (for browser auth). */
@@ -47,6 +56,27 @@ export async function publishToUsers(
       }),
     ),
   );
+}
+
+/** Push a chat message body so open threads can patch without full RSC reload. */
+export async function pushChatMessageForUsers(
+  userIds: string[],
+  message: ChatMessageEvent,
+) {
+  await publishToUsers(userIds, CHAT_MESSAGE_ABLY, message);
+}
+
+export type BadgeDelta = {
+  unreadDelta?: number;
+  chatUnreadDelta?: number;
+};
+
+/** Lightweight badge nudge — clients adjust locally without getNavBadgeCounts. */
+export async function pushBadgeDeltaForUsers(
+  userIds: string[],
+  delta: BadgeDelta,
+) {
+  await publishToUsers(userIds, "badge-delta", delta);
 }
 
 /** Push fresh nav badge counts to one or more users. */

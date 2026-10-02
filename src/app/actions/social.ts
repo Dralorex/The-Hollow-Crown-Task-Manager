@@ -1,14 +1,18 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { requireUser } from "@/lib/auth";
 import {
   pushAlertInboxForUsers,
+  pushBadgeDeltaForUsers,
   pushBadgesForUsers,
+  pushChatMessageForUsers,
   pushRefreshForUsers,
 } from "@/lib/ably-server";
 import { handleBirthdayOnFriendship } from "@/lib/birthday";
+import type { ChatMessageEvent } from "@/lib/chat-message-events";
 import { derivePresence } from "@/lib/chat-presence";
 import { publishChatPresence } from "@/lib/chat-presence-bus";
 import { prisma } from "@/lib/db";
@@ -21,6 +25,10 @@ import {
 import { normalizeUsername, personLabel } from "@/lib/utils";
 import type { Role } from "@/generated/prisma/client";
 import type { ActionResult } from "@/app/actions/auth";
+
+export type SendMessageResult =
+  | { ok: true; message: ChatMessageEvent }
+  | { ok: false; error: string };
 
 export async function sendFriendRequestAction(
   _prev: ActionResult | null,
@@ -543,7 +551,7 @@ export async function createFriendGroupChatAction(
 export async function sendMessageAction(
   _prev: ActionResult | null,
   formData: FormData,
-): Promise<ActionResult> {
+): Promise<SendMessageResult> {
   const user = await requireUser();
   const groupId = String(formData.get("groupId") ?? "");
   const body = String(formData.get("body") ?? "").trim();
@@ -551,10 +559,32 @@ export async function sendMessageAction(
 
   const member = await prisma.chatMember.findUnique({
     where: { groupId_userId: { groupId, userId: user.id } },
-    include: {
+    select: {
+      id: true,
       group: {
-        include: {
-          members: { include: { user: true } },
+        select: {
+          id: true,
+          name: true,
+          closedAt: true,
+          isDirect: true,
+          workspaceId: true,
+          members: {
+            select: {
+              userId: true,
+              notifyMode: true,
+              lastSeenAt: true,
+              lastActiveAt: true,
+              user: {
+                select: {
+                  id: true,
+                  username: true,
+                  nickname: true,
+                  deletedAt: true,
+                  deletedUsername: true,
+                },
+              },
+            },
+          },
         },
       },
     },
@@ -570,7 +600,8 @@ export async function sendMessageAction(
   }
 
   const nowDate = new Date();
-  await prisma.chatMember.update({
+  // Clear typing + mark seen; don't block return on presence bus.
+  const clearTyping = prisma.chatMember.update({
     where: { id: member.id },
     data: {
       typingAt: null,
@@ -599,6 +630,7 @@ export async function sendMessageAction(
       where: {
         workspaceId_userId: { workspaceId: group.workspaceId, userId: user.id },
       },
+      select: { role: true },
     });
     senderWorkspaceRole = wsMembership?.role ?? null;
   }
@@ -645,91 +677,127 @@ export async function sendMessageAction(
         role: { in: roleNames },
         userId: { in: chatMembers.map((m) => m.userId) },
       },
+      select: { userId: true },
     });
     for (const rm of roleMembers) {
       if (rm.userId !== user.id) mentionedUserIds.add(rm.userId);
     }
   }
 
-  const message = await prisma.message.create({
-    data: {
-      groupId,
-      senderId: user.id,
-      body,
-      mentions: {
-        create: [
-          ...userMentions
-            .map((m) => {
-              const target = memberByUsername.get(m.username);
-              if (!target) return null;
-              return {
-                kind: "user",
-                userId: target.userId,
-              };
-            })
-            .filter((m): m is { kind: string; userId: string } => Boolean(m)),
-          ...(wantsEveryone ? [{ kind: "everyone" as const }] : []),
-          ...roleMentions.map((r) => ({
-            kind: "role" as const,
-            roleName: r.roleName,
-          })),
-        ],
-      },
-    },
-  });
-
-  const now = Date.now();
-  const preview = body.length > 120 ? `${body.slice(0, 117)}…` : body;
-  const titlePrefix = group.isDirect
-    ? `Message from ${personLabel(user)}`
-    : `${group.name}: ${personLabel(user)}`;
-
-  const notified: string[] = [];
-  for (const m of chatMembers) {
-    if (m.userId === user.id) continue;
-
-    const mentioned = mentionedUserIds.has(m.userId);
-    const mode = m.notifyMode;
-    if (mode === "MUTE") continue;
-    if (mode === "MENTIONS" && !mentioned) continue;
-
-    const lastOpen = m.lastSeenAt ?? m.lastActiveAt;
-    if (lastOpen && now - lastOpen.getTime() < OPEN_THREAD_MS) {
-      continue;
-    }
-
-    await prisma.notification.create({
+  const [, message] = await Promise.all([
+    clearTyping,
+    prisma.message.create({
       data: {
-        userId: m.userId,
-        type: mentioned ? "CHAT_MENTION" : "CHAT_MESSAGE",
-        title: mentioned ? "Mentioned in chat" : titlePrefix,
-        body: mentioned
-          ? `${personLabel(user)} in ${group.name}: ${preview}`
-          : preview,
-        meta: JSON.stringify({
-          groupId,
-          messageId: message.id,
-          fromUserId: user.id,
-          mentioned,
-        }),
+        groupId,
+        senderId: user.id,
+        body,
+        mentions: {
+          create: [
+            ...userMentions
+              .map((m) => {
+                const target = memberByUsername.get(m.username);
+                if (!target) return null;
+                return {
+                  kind: "user",
+                  userId: target.userId,
+                };
+              })
+              .filter((m): m is { kind: string; userId: string } => Boolean(m)),
+            ...(wantsEveryone ? [{ kind: "everyone" as const }] : []),
+            ...roleMentions.map((r) => ({
+              kind: "role" as const,
+              roleName: r.roleName,
+            })),
+          ],
+        },
       },
-    });
-    notified.push(m.userId);
-  }
-
-  await Promise.all([
-    pushRefreshForUsers(
-      chatMembers.map((m) => m.userId),
-      ["/app/chat"],
-    ),
-    notified.length > 0 ? pushBadgesForUsers(notified) : Promise.resolve(),
+    }),
   ]);
 
-  revalidatePath("/app/chat");
-  revalidatePath("/app/notifications");
-  revalidatePath("/app", "layout");
-  publishChatPresence(groupId);
-  return { ok: true };
+  const payload: ChatMessageEvent = {
+    id: message.id,
+    groupId,
+    body,
+    createdAt: message.createdAt.toISOString(),
+    senderId: user.id,
+    senderLabel: personLabel(user),
+    senderUsername: user.username,
+  };
+
+  const otherMemberIds = chatMembers
+    .map((m) => m.userId)
+    .filter((id) => id !== user.id);
+
+  // Fan-out after the response — keep send path to auth + insert.
+  after(async () => {
+    try {
+      const now = Date.now();
+      const preview = body.length > 120 ? `${body.slice(0, 117)}…` : body;
+      const titlePrefix = group.isDirect
+        ? `Message from ${personLabel(user)}`
+        : `${group.name}: ${personLabel(user)}`;
+
+      const notificationRows: {
+        userId: string;
+        type: "CHAT_MENTION" | "CHAT_MESSAGE";
+        title: string;
+        body: string;
+        meta: string;
+      }[] = [];
+
+      for (const m of chatMembers) {
+        if (m.userId === user.id) continue;
+
+        const mentioned = mentionedUserIds.has(m.userId);
+        const mode = m.notifyMode;
+        if (mode === "MUTE") continue;
+        if (mode === "MENTIONS" && !mentioned) continue;
+
+        const lastOpen = m.lastSeenAt ?? m.lastActiveAt;
+        if (lastOpen && now - lastOpen.getTime() < OPEN_THREAD_MS) {
+          continue;
+        }
+
+        notificationRows.push({
+          userId: m.userId,
+          type: mentioned ? "CHAT_MENTION" : "CHAT_MESSAGE",
+          title: mentioned ? "Mentioned in chat" : titlePrefix,
+          body: mentioned
+            ? `${personLabel(user)} in ${group.name}: ${preview}`
+            : preview,
+          meta: JSON.stringify({
+            groupId,
+            messageId: message.id,
+            fromUserId: user.id,
+            mentioned,
+          }),
+        });
+      }
+
+      if (notificationRows.length > 0) {
+        await prisma.notification.createMany({ data: notificationRows });
+      }
+
+      const notified = notificationRows.map((n) => n.userId);
+
+      await Promise.all([
+        pushChatMessageForUsers(otherMemberIds, payload),
+        // Fallback for clients without message handler / list preview.
+        pushRefreshForUsers(otherMemberIds, ["/app/chat"]),
+        notified.length > 0
+          ? pushBadgeDeltaForUsers(notified, { chatUnreadDelta: 1 })
+          : Promise.resolve(),
+        // Accurate badges shortly after delta (open-thread skips keep this small).
+        notified.length > 0 ? pushBadgesForUsers(notified) : Promise.resolve(),
+      ]);
+
+      publishChatPresence(groupId);
+    } catch (err) {
+      console.error("[chat] send fan-out failed", err);
+    }
+  });
+
+  return { ok: true, message: payload };
 }
 
 export async function leaveChatAction(
@@ -1021,14 +1089,9 @@ export async function markChatNotificationsReadAction(
     data: { read: true },
   });
 
-  await Promise.all([
-    pushBadgesForUsers([user.id]),
-    pushRefreshForUsers([user.id], ["/app/chat"]),
-  ]);
-
-  revalidatePath("/app/chat");
-  revalidatePath("/app/notifications");
-  revalidatePath("/app", "layout");
+  after(async () => {
+    await pushBadgesForUsers([user.id]);
+  });
 }
 
 /** Heartbeat while a chat thread is open — used to suppress noisy notifications. */
@@ -1087,29 +1150,34 @@ export async function touchChatSeenAction(
   const groupId = String(formData.get("groupId") ?? "");
   const member = await prisma.chatMember.findUnique({
     where: { groupId_userId: { groupId, userId: user.id } },
+    select: { id: true },
   });
   if (!member) return { ok: false, error: "You’re not in this chat." };
 
   const now = new Date();
-  await prisma.chatMember.update({
-    where: { id: member.id },
-    data: { lastSeenAt: now, lastActiveAt: now },
+  const [, cleared] = await Promise.all([
+    prisma.chatMember.update({
+      where: { id: member.id },
+      data: { lastSeenAt: now, lastActiveAt: now },
+    }),
+    prisma.notification.updateMany({
+      where: {
+        userId: user.id,
+        read: false,
+        type: { in: ["CHAT_MESSAGE", "CHAT_MENTION"] },
+        meta: { contains: groupId },
+      },
+      data: { read: true },
+    }),
+  ]);
+
+  after(async () => {
+    if (cleared.count > 0) {
+      await pushBadgesForUsers([user.id]);
+    }
+    publishChatPresence(groupId);
   });
 
-  await prisma.notification.updateMany({
-    where: {
-      userId: user.id,
-      read: false,
-      type: { in: ["CHAT_MESSAGE", "CHAT_MENTION"] },
-      meta: { contains: groupId },
-    },
-    data: { read: true },
-  });
-
-  await pushBadgesForUsers([user.id]);
-
-  publishChatPresence(groupId);
-  revalidatePath("/app", "layout");
   return { ok: true };
 }
 
