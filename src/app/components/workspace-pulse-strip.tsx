@@ -1,4 +1,6 @@
-import { AppLink } from "@/app/components/app-link";
+"use client";
+
+import { SoftNavLink } from "@/app/components/soft-nav";
 
 export function WorkspacePulseStrip({
   workspaceId,
@@ -32,20 +34,21 @@ export function WorkspacePulseStrip({
     label: string,
     count?: number,
   ) => (
-    <AppLink
+    <SoftNavLink
       href={href}
-      className={`inline-flex min-h-9 items-center justify-center gap-1 rounded-full px-3 py-1.5 text-sm font-semibold transition ${
+      pending="dot"
+      compactPending
+      className={`relative inline-flex min-h-9 items-center justify-center gap-1 rounded-full px-3 py-1.5 text-sm font-semibold transition ${
         active
           ? "bg-[#0A3D45] text-[#E8F7F6]"
           : "bg-white/50 text-[#0A3D45]/75 hover:bg-white/80"
       }`}
-      compactPending
     >
       {label}
       {typeof count === "number" ? (
         <span className="ml-0.5 tabular-nums opacity-80">{count}</span>
       ) : null}
-    </AppLink>
+    </SoftNavLink>
   );
 
   if (!showPulse && !showInbox) return null;
@@ -81,13 +84,14 @@ export function WorkspacePulseStrip({
             ))}
           </dl>
           {canReview && counts.inReview > 0 && showInbox ? (
-            <AppLink
+            <SoftNavLink
               href={`${base}?inbox=review`}
-              className="inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-[#1a7a82] underline-offset-2 hover:underline"
+              pending="dot"
               compactPending
+              className="relative inline-flex shrink-0 items-center gap-1 text-xs font-semibold text-[#1a7a82] underline-offset-2 hover:underline"
             >
               Review · {counts.inReview}
-            </AppLink>
+            </SoftNavLink>
           ) : null}
         </div>
       ) : null}

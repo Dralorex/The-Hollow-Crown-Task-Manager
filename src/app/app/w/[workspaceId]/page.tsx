@@ -3,12 +3,17 @@ import { AppLink } from "@/app/components/app-link";
 import { InlineActionForm } from "@/app/components/forms";
 import { FolderActions } from "@/app/components/folder-actions";
 import { OnboardingFolderBubbles } from "@/app/components/onboarding-folder-bubbles";
+import { SoftNavLink } from "@/app/components/soft-nav";
 import { WorkspaceFoldersSidebar } from "@/app/components/workspace-folders-sidebar";
 import { WorkspaceAddTaskPanel } from "@/app/components/workspace-add-task-panel";
 import { WorkspaceOnboardingProvider } from "@/app/components/workspace-onboarding-context";
 import { WorkspaceSetupChecklist } from "@/app/components/workspace-setup-checklist";
 import { OnboardingChooser } from "@/app/components/onboarding-chooser";
 import { OnboardingScrollToBlink } from "@/app/components/onboarding-scroll-to-blink";
+import {
+  WorkspaceSoftNavPanel,
+  WorkspaceSoftNavShell,
+} from "@/app/components/workspace-soft-nav-shell";
 import { WorkspaceTaskList } from "@/app/components/workspace-task-list";
 import { inviteMemberAction } from "@/app/actions/workspaces";
 import { FriendInvitePicker } from "@/app/components/friend-invite-picker";
@@ -603,6 +608,7 @@ export default async function WorkspacePage({
 
   return (
     <main className="mx-auto max-w-6xl px-4 py-8">
+      <WorkspaceSoftNavShell>
       <WorkspaceOnboardingProvider
         workspaceId={workspaceId}
         forceShow={showSetup}
@@ -814,16 +820,18 @@ export default async function WorkspacePage({
             ) : null}
           </aside>
 
+          <WorkspaceSoftNavPanel>
           <section className="space-y-6">
             <div className="tide-panel p-5">
               {backHref && backLabel ? (
-                <AppLink
+                <SoftNavLink
                   href={backHref}
-                  className="inline-flex items-center gap-1 text-sm text-[#0A3D45]/60 hover:underline"
+                  pending="dot"
                   compactPending
+                  className="relative inline-flex items-center gap-1 text-sm text-[#0A3D45]/60 hover:underline"
                 >
                   ← {backLabel}
-                </AppLink>
+                </SoftNavLink>
               ) : null}
               <div className="mt-1 flex flex-wrap items-center justify-between gap-2">
                 <h2 className="font-[family-name:var(--font-display)] text-2xl text-[#0A3D45]">
@@ -836,13 +844,14 @@ export default async function WorkspacePage({
                 </h2>
                 <div className="flex flex-wrap items-center gap-2">
                   {!inbox && currentFolder ? (
-                    <AppLink
+                    <SoftNavLink
                       href={`/app/w/${workspaceId}`}
-                      className="tide-btn-secondary inline-flex items-center gap-1 !px-3 !py-1.5 text-xs"
+                      pending="dot"
                       compactPending
+                      className="tide-btn-secondary relative inline-flex items-center gap-1 !px-3 !py-1.5 text-xs"
                     >
                       See All Tasks
-                    </AppLink>
+                    </SoftNavLink>
                   ) : null}
                   {!inbox && canEdit && currentFolder ? (
                     <FolderActions
@@ -930,8 +939,10 @@ export default async function WorkspacePage({
               showTaskHistory={ui.taskHistory}
             />
           </section>
+          </WorkspaceSoftNavPanel>
         </div>
       </WorkspaceOnboardingProvider>
+      </WorkspaceSoftNavShell>
     </main>
   );
 }

@@ -3,7 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { format } from "date-fns";
 import { useRouter } from "next/navigation";
-import { AppLink } from "@/app/components/app-link";
+import { SoftNavLink } from "@/app/components/soft-nav";
 import { InlineActionForm } from "@/app/components/forms";
 import { MenuSurface, menuItemClass } from "@/app/components/menu-surface";
 import { blinkRing } from "@/app/components/onboarding-prompt";
@@ -671,13 +671,14 @@ export function WorkspaceTaskRow({
               {isRoot && task.folder ? (
                 <p className="mt-2 text-xs text-[#0A3D45]/55">
                   In{" "}
-                  <AppLink
+                  <SoftNavLink
                     href={`/app/w/${workspaceId}?folder=${task.folderId}`}
-                    className="inline-flex items-center gap-1 font-semibold underline-offset-2 hover:underline"
+                    pending="dot"
                     compactPending
+                    className="relative inline-flex items-center gap-1 font-semibold underline-offset-2 hover:underline"
                   >
                     {task.folder.name}
-                  </AppLink>
+                  </SoftNavLink>
                 </p>
               ) : null}
               {task.description ? (

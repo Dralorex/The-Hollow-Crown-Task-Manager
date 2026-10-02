@@ -1,12 +1,18 @@
 /** Lightweight skeleton shown while an /app route streams in. */
 export function AppRouteLoading({
   label = "Loading",
+  embedded = false,
 }: {
   label?: string;
+  /** Use a div instead of main when nested inside another page shell. */
+  embedded?: boolean;
 }) {
+  const Tag = embedded ? "div" : "main";
   return (
-    <main
-      className="mx-auto max-w-6xl px-4 py-8"
+    <Tag
+      className={
+        embedded ? "py-2" : "mx-auto max-w-6xl px-4 py-8"
+      }
       aria-busy="true"
       aria-label={label}
     >
@@ -30,6 +36,7 @@ export function AppRouteLoading({
           />
         ))}
       </div>
-    </main>
+    </Tag>
   );
 }
+

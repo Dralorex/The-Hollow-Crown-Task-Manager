@@ -1,4 +1,6 @@
-import { AppLink } from "@/app/components/app-link";
+"use client";
+
+import { SoftNavLink } from "@/app/components/soft-nav";
 import { FolderActions } from "@/app/components/folder-actions";
 import { FolderCompletionStats } from "@/app/components/folder-completion-stats";
 
@@ -16,7 +18,7 @@ type FolderActionsProps = {
   currentParentId?: string | null;
 };
 
-/** Folder card where empty space opens the folder; actions stay clickable. */
+/** Folder card where the main area opens the folder; actions stay clickable. */
 export function FolderBubble({
   workspaceId,
   folderId,
@@ -49,7 +51,7 @@ export function FolderBubble({
 
   return (
     <div
-      className={`group relative flex items-start justify-between gap-2 rounded-lg border px-3 py-2.5 transition ${
+      className={`group relative flex items-start justify-between gap-2 rounded-lg border transition ${
         locked
           ? "cursor-not-allowed border-[#0A3D45]/8 bg-[#0A3D45]/[0.015] opacity-80"
           : "border-[#0A3D45]/10 bg-[#0A3D45]/[0.02] hover:border-[#0A3D45]/20 hover:bg-[#0A3D45]/[0.05]"
@@ -59,18 +61,8 @@ export function FolderBubble({
           : ""
       }`}
     >
-      {!locked ? (
-        <AppLink
-          href={href}
-          pending="sheen"
-          data-onboarding={blink ? "folder-bubble" : undefined}
-          className="absolute inset-0 z-0 rounded-lg"
-          aria-label={`Open folder ${name}`}
-        />
-      ) : null}
-
-      <div className="relative z-[1] min-w-0 flex-1 pointer-events-none">
-        {locked ? (
+      {locked ? (
+        <div className="min-w-0 flex-1 px-3 py-2.5">
           <span
             className="flex min-w-0 items-center gap-2 text-sm font-semibold text-[#0A3D45]/45"
             title="You don’t have a required role for this folder"
@@ -79,7 +71,22 @@ export function FolderBubble({
             <span className="truncate">{name}</span>
             <span aria-hidden>🔒</span>
           </span>
-        ) : (
+          {showStats ? (
+            <FolderCompletionStats
+              done={done}
+              total={total}
+              unclaimed={unclaimed}
+            />
+          ) : null}
+        </div>
+      ) : (
+        <SoftNavLink
+          href={href}
+          pending="sheen"
+          data-onboarding={blink ? "folder-bubble" : undefined}
+          className="relative min-w-0 flex-1 rounded-lg px-3 py-2.5"
+          aria-label={`Open folder ${name}`}
+        >
           <span className="flex min-w-0 items-center gap-2 text-sm font-semibold text-[#0A3D45]">
             <span className="truncate">{name}</span>
             {restricted ? (
@@ -91,18 +98,18 @@ export function FolderBubble({
               </span>
             ) : null}
           </span>
-        )}
-        {showStats ? (
-          <FolderCompletionStats
-            done={done}
-            total={total}
-            unclaimed={unclaimed}
-          />
-        ) : null}
-      </div>
+          {showStats ? (
+            <FolderCompletionStats
+              done={done}
+              total={total}
+              unclaimed={unclaimed}
+            />
+          ) : null}
+        </SoftNavLink>
+      )}
 
       {showActions ? (
-        <div className="relative z-[1] shrink-0 pointer-events-auto">
+        <div className="relative z-[2] shrink-0 self-center pr-2 pointer-events-auto">
           <FolderActions {...folderActions} />
         </div>
       ) : null}
