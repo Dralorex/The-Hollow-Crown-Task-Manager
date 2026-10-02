@@ -1,3 +1,4 @@
+import { unstable_cache } from "next/cache";
 import { prisma } from "@/lib/db";
 import { getRoleActivityUnread } from "@/lib/folder-access";
 
@@ -5,6 +6,10 @@ export type NavBadgeCounts = {
   unreadCount: number;
   chatUnreadCount: number;
 };
+
+export function navBadgeTag(userId: string) {
+  return `nav-badges:${userId}`;
+}
 
 /** Same badge math as `/app` layout (alerts + role activity, chat separate). */
 export async function getNavBadgeCounts(userId: string): Promise<NavBadgeCounts> {
@@ -47,4 +52,16 @@ export async function getNavBadgeCounts(userId: string): Promise<NavBadgeCounts>
     unreadCount: notifUnread + roleUnreadTotal,
     chatUnreadCount,
   };
+}
+
+/**
+ * Short-lived cache so tab navigations don’t re-run heavy badge math every time.
+ * Live Ably badge pushes still update the client immediately.
+ */
+export function getNavBadgeCountsCached(userId: string) {
+  return unstable_cache(
+    async () => getNavBadgeCounts(userId),
+    ["nav-badges", userId],
+    { revalidate: 20, tags: [navBadgeTag(userId)] },
+  )();
 }
