@@ -780,15 +780,13 @@ export async function sendMessageAction(
 
       const notified = notificationRows.map((n) => n.userId);
 
+      // chat:message already dispatches list refresh on clients; skip full
+      // `refresh` + getNavBadgeCounts recount on the hot send path.
       await Promise.all([
         pushChatMessageForUsers(otherMemberIds, payload),
-        // Fallback for clients without message handler / list preview.
-        pushRefreshForUsers(otherMemberIds, ["/app/chat"]),
         notified.length > 0
           ? pushBadgeDeltaForUsers(notified, { chatUnreadDelta: 1 })
           : Promise.resolve(),
-        // Accurate badges shortly after delta (open-thread skips keep this small).
-        notified.length > 0 ? pushBadgesForUsers(notified) : Promise.resolve(),
       ]);
 
       publishChatPresence(groupId);

@@ -7,9 +7,8 @@ import { RealtimeProvider } from "@/app/components/realtime-provider";
 import { isAblyConfigured } from "@/lib/ably-server";
 import { getAccountRosterPublic } from "@/lib/account-roster";
 import { getCurrentUser } from "@/lib/auth";
-import { syncBirthdayNotifications } from "@/lib/birthday";
-import { syncDeadlineNotifications } from "@/lib/deadline-notifications";
 import { getNavBadgeCountsCached } from "@/lib/nav-badges";
+import { syncUserNotificationsThrottled } from "@/lib/notification-sync";
 import { personLabel } from "@/lib/utils";
 
 export default async function AppSectionLayout({
@@ -20,10 +19,9 @@ export default async function AppSectionLayout({
   const user = await getCurrentUser();
   if (!user) redirect("/login");
 
-  // Don't block first paint / every navigation on sync workers.
+  // Don't block first paint; throttle so navs don't re-sync every request.
   after(() => {
-    void syncDeadlineNotifications(user.id);
-    void syncBirthdayNotifications(user.id);
+    void syncUserNotificationsThrottled(user.id);
   });
 
   const [{ unreadCount, chatUnreadCount }, accounts] = await Promise.all([

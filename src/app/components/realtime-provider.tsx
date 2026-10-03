@@ -5,6 +5,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -65,11 +66,16 @@ export function RealtimeProvider({
 }) {
   const router = useRouter();
   const pathname = usePathname();
+  const pathnameRef = useRef(pathname);
   const pollingActive = useActivePolling();
   const [badges, setBadges] = useState<BadgeState>({
     unreadCount: initialUnreadCount,
     chatUnreadCount: initialChatUnreadCount,
   });
+
+  useEffect(() => {
+    pathnameRef.current = pathname;
+  }, [pathname]);
 
   useEffect(() => {
     setBadges({
@@ -134,12 +140,13 @@ export function RealtimeProvider({
     };
 
     const onRefresh = (message: Ably.Message) => {
+      const path = pathnameRef.current;
       const data = (message.data ?? {}) as RefreshPayload;
       const paths = Array.isArray(data.paths) ? data.paths : [];
       if (paths.some((p) => p === "/app/chat" || p.startsWith("/app/chat"))) {
         window.dispatchEvent(new Event("rowgon:chat-refresh"));
         // Open chat thread patches via chat:message; skip full RSC refresh there.
-        if (pathname.startsWith("/app/chat")) return;
+        if (path.startsWith("/app/chat")) return;
       }
       if (paths.length === 0) {
         router.refresh();
@@ -147,9 +154,7 @@ export function RealtimeProvider({
       }
       const matches = paths.some(
         (p) =>
-          pathname === p ||
-          pathname.startsWith(`${p}/`) ||
-          pathname.startsWith(p),
+          path === p || path.startsWith(`${p}/`) || path.startsWith(p),
       );
       if (matches) router.refresh();
     };
@@ -166,7 +171,8 @@ export function RealtimeProvider({
       channel.unsubscribe("refresh", onRefresh);
       client.close();
     };
-  }, [enabled, userId, pollingActive, pathname, router]);
+    // pathname is read via ref so nav does not tear down the Ably connection.
+  }, [enabled, userId, pollingActive, router]);
 
   const value = useMemo(() => badges, [badges]);
 

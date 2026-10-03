@@ -72,8 +72,8 @@ model User {
   /** Always prompt before sharing birthday with a new friend/workspace. */
   askBeforeShareBirthday Boolean @default(true)
   showBirthdaysOnCalendar Boolean @default(true)
-  /** Opt-in weekly email of due / review / claimed work */
-  weeklyDigestEnabled Boolean @default(true)
+  /** Opt-in weekly email of due / review / claimed work (default off — Resend cost). */
+  weeklyDigestEnabled Boolean @default(false)
   weeklyDigestLastSentAt DateTime?
   /**
    * Personal Interface prefs JSON:

@@ -9,6 +9,7 @@ import { getDatabaseUrl } from "../src/lib/db-url";
 import { sendEmail } from "../src/lib/mail";
 import {
   buildWeeklyDigest,
+  digestIsEmpty,
   weeklyDigestEmail,
 } from "../src/lib/weekly-digest";
 
@@ -25,10 +26,16 @@ async function main() {
   });
 
   let sent = 0;
+  let skippedEmpty = 0;
   for (const user of users) {
     if (!user.email) continue;
     const payload = await buildWeeklyDigest(user.id);
     if (!payload) continue;
+    if (digestIsEmpty(payload)) {
+      skippedEmpty += 1;
+      console.log("skip-empty", user.username);
+      continue;
+    }
     const mail = weeklyDigestEmail(payload);
     const result = await sendEmail({
       to: user.email,
@@ -48,7 +55,7 @@ async function main() {
     console.log(result.mocked ? "mocked" : "sent", user.username);
   }
 
-  console.log(`done: ${sent}/${users.length}`);
+  console.log(`done: ${sent}/${users.length} (skipped empty: ${skippedEmpty})`);
   await prisma.$disconnect();
 }
 
