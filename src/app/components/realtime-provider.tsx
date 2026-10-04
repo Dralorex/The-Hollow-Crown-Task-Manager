@@ -169,7 +169,16 @@ export function RealtimeProvider({
       channel.unsubscribe("badge-delta", onBadgeDelta);
       channel.unsubscribe(CHAT_MESSAGE_ABLY, onChatMessage);
       channel.unsubscribe("refresh", onRefresh);
-      client.close();
+      // Ably close() may reject when the connection is already closed
+      // (React Strict Mode remount / idle teardown). Never surface that.
+      try {
+        const closing = client.close() as void | Promise<unknown>;
+        if (closing != null && typeof (closing as Promise<unknown>).catch === "function") {
+          void (closing as Promise<unknown>).catch(() => {});
+        }
+      } catch {
+        /* ignore sync close failures */
+      }
     };
     // pathname is read via ref so nav does not tear down the Ably connection.
   }, [enabled, userId, pollingActive, router]);
