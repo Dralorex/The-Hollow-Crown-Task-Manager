@@ -12,6 +12,7 @@
     "db:migrate": "prisma migrate dev",
     "db:push": "prisma db push",
     "db:seed": "tsx prisma/seed.ts",
+    "smoke:r2": "tsx scripts/smoke-r2.ts",
     "postinstall": "prisma generate",
     "test:e2e": "playwright test"
   },

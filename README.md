@@ -98,6 +98,11 @@ Neon is **not** file storage. Bytes go in R2; metadata in `StoredObject`.
 3. Server actions (Admin+): `requestUploadUrlAction` → client PUT → `confirmUploadAction` → `requestDownloadUrlAction` / `deleteStoredObjectAction`.
 4. Temporary hard max **25 MB** + MIME allowlist (not plan-based yet).
 5. Virus scan: **deferred** — see comments in `src/app/actions/storage.ts`.
+6. Local connectivity check (no UI required):
+
+```bash
+npm run smoke:r2
+```
 
 ### Vercel Cron
 
