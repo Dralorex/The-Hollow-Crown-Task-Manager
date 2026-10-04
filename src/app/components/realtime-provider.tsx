@@ -159,25 +159,30 @@ export function RealtimeProvider({
       if (matches) router.refresh();
     };
 
-    void channel.subscribe("badges", onBadges);
-    void channel.subscribe("badge-delta", onBadgeDelta);
-    void channel.subscribe(CHAT_MESSAGE_ABLY, onChatMessage);
-    void channel.subscribe("refresh", onRefresh);
+    // Subscribe returns a Promise that rejects with "Connection closed" if we
+    // tear down (Strict Mode remount / idle pause) before attach finishes.
+    // `void` alone does not attach a rejection handler.
+    const ignoreAblyTeardown = () => {};
+    void channel.subscribe("badges", onBadges).catch(ignoreAblyTeardown);
+    void channel.subscribe("badge-delta", onBadgeDelta).catch(ignoreAblyTeardown);
+    void channel.subscribe(CHAT_MESSAGE_ABLY, onChatMessage).catch(ignoreAblyTeardown);
+    void channel.subscribe("refresh", onRefresh).catch(ignoreAblyTeardown);
 
     return () => {
-      channel.unsubscribe("badges", onBadges);
-      channel.unsubscribe("badge-delta", onBadgeDelta);
-      channel.unsubscribe(CHAT_MESSAGE_ABLY, onChatMessage);
-      channel.unsubscribe("refresh", onRefresh);
-      // Ably close() may reject when the connection is already closed
-      // (React Strict Mode remount / idle teardown). Never surface that.
       try {
-        const closing = client.close() as void | Promise<unknown>;
-        if (closing != null && typeof (closing as Promise<unknown>).catch === "function") {
-          void (closing as Promise<unknown>).catch(() => {});
-        }
+        channel.unsubscribe("badges", onBadges);
+        channel.unsubscribe("badge-delta", onBadgeDelta);
+        channel.unsubscribe(CHAT_MESSAGE_ABLY, onChatMessage);
+        channel.unsubscribe("refresh", onRefresh);
       } catch {
-        /* ignore sync close failures */
+        /* ignore */
+      }
+      try {
+        // close() is sync/void; in-flight subscribe/auth promises reject when
+        // the connection drops — those are handled via .catch above.
+        client.close();
+      } catch {
+        /* ignore */
       }
     };
     // pathname is read via ref so nav does not tear down the Ably connection.
