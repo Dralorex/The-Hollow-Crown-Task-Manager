@@ -14,6 +14,6 @@ wizards, Stats, or entitlement enforcement.
 | WorkOS | Routes present; `ENABLE_SSO=false` by default |
 | Virus scan | **Deferred** — hook comments on `confirmUpload` only |
 
-Next: Phase 1 monetization (subscriptions, entitlements, seat recount) on top of
-these vendors. Keep password auth as break-glass until SSO is explicitly enabled
-for Enterprise.
+Phase 1 monetization continues on `cursor/monetization-phase1-b27a`
+(`docs/MONETIZATION_PHASE1.md`). Keep password auth as break-glass until SSO is
+explicitly enabled for Enterprise.

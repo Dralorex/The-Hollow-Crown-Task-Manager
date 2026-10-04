@@ -24,11 +24,23 @@ export async function runSeatRenewalStub() {
   };
 }
 
-/** Stub: dunning emails for failed payments later. */
+/**
+ * Dunning sweep — Phase 1 emails on invoice.payment_failed webhook.
+ * Cron lists workspaces still in grace / past_due for ops visibility.
+ */
 export async function runDunningStub() {
+  const pastDue = await prisma.workspaceBilling.count({
+    where: { status: "PAST_DUE" },
+  });
+  const inGrace = await prisma.workspaceBilling.count({
+    where: {
+      status: "PAST_DUE",
+      paymentGraceUntil: { gt: new Date() },
+    },
+  });
   return {
-    processed: 0,
-    detail: "noop; dunning not implemented yet",
+    processed: pastDue,
+    detail: `pastDue=${pastDue} inGrace=${inGrace}; emails sent on webhook`,
   };
 }
 

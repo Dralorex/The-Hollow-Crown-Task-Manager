@@ -229,6 +229,7 @@ model Workspace {
   customRoles WorkspaceRole[]
   folderTemplates FolderTemplate[]
   storedObjects StoredObject[]
+  billing        WorkspaceBilling?
   organizationId String?
   organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
 
@@ -737,9 +738,60 @@ model Notification {
 }
 
 /**
- * Infra bootstrap models — billing / storage / cron / SSO scaffolding.
- * No plan/seat enforcement yet. Virus scanning intentionally deferred.
+ * Infra + Phase 1 monetization models.
+ * Virus scanning intentionally deferred. Downgrade wizards = Phase 2.
  */
+
+enum PlanId {
+  FREE
+  TEAM
+  BUSINESS
+  ENTERPRISE
+}
+
+enum BillingInterval {
+  MONTHLY
+  YEARLY
+}
+
+enum BillingStatus {
+  ACTIVE
+  PAST_DUE
+  CANCELED
+  UNPAID
+  INCOMPLETE
+}
+
+/** Per-workspace plan + Stripe subscription state (Team/Business). Enterprise org billing later. */
+model WorkspaceBilling {
+  id                   String           @id @default(cuid())
+  workspaceId          String           @unique
+  plan                 PlanId           @default(FREE)
+  interval             BillingInterval?
+  status               BillingStatus    @default(ACTIVE)
+  /** Billed seat capacity (not always equal to member count until renewal). */
+  seatQuantity         Int              @default(5)
+  stripeSubscriptionId String?          @unique
+  stripeBaseItemId     String?
+  stripeSeatItemId     String?
+  currentPeriodStart   DateTime?
+  currentPeriodEnd     DateTime?
+  cancelAtPeriodEnd    Boolean          @default(false)
+  pendingPlan          PlanId?
+  pendingSeatQuantity  Int?
+  pendingEffectiveAt   DateTime?
+  /** After invoice.payment_failed — entitlements stay until this instant. */
+  paymentGraceUntil    DateTime?
+  lastInvoiceStatus    String?
+  createdAt            DateTime         @default(now())
+  updatedAt            DateTime         @updatedAt
+
+  workspace Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+
+  @@index([plan])
+  @@index([status])
+  @@index([stripeSubscriptionId])
+}
 
 /** Stripe webhook idempotency — store processed event ids. */
 model StripeWebhookEvent {

@@ -81,6 +81,34 @@ export function welcomeAccountEmail(opts: {
   };
 }
 
+export function paymentFailedEmail(opts: {
+  username: string;
+  workspaceName: string;
+  graceDays: number;
+}) {
+  const appUrl = getAppBaseUrl();
+  return {
+    subject: `Payment failed for “${opts.workspaceName}”`,
+    ...shell(
+      "Update your payment method",
+      `<p style="margin:0 0 12px;font-size:16px;line-height:1.5;color:rgba(10,61,69,0.85);">
+        Hi @${escapeHtml(opts.username)}, we couldn’t charge the card on file for
+        workspace <strong>${escapeHtml(opts.workspaceName)}</strong>.
+      </p>
+      <p style="margin:0 0 20px;font-size:16px;line-height:1.5;color:rgba(10,61,69,0.85);">
+        You have about ${opts.graceDays} days to update billing before paid features
+        may be restricted. Your data stays safe.
+      </p>
+      <p style="margin:0;">
+        <a href="${appUrl}/app" style="display:inline-block;background:#0A3D45;color:#E8F7F6;text-decoration:none;padding:12px 18px;border-radius:999px;font-size:14px;">
+          Open billing in Rowgon
+        </a>
+      </p>`,
+      `Hi @${opts.username}, payment failed for workspace “${opts.workspaceName}”. Update your card within ~${opts.graceDays} days. Open Rowgon: ${appUrl}/app`,
+    ),
+  };
+}
+
 export function passwordResetEmail(opts: { username: string; code: string }) {
   return {
     subject: "Your Rowgon password reset code",

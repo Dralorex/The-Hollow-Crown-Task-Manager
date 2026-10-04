@@ -22,6 +22,12 @@ import { canManagePeople, isOwnerOnlyAction, requireMembership } from "@/lib/per
 import { isValidEmail, normalizeUsername, personLabel } from "@/lib/utils";
 import type { Role } from "@/generated/prisma/client";
 import type { ActionResult } from "@/app/actions/auth";
+import {
+  assertCanAddMember,
+  assertCanCreateFreeWorkspace,
+} from "@/lib/entitlements";
+import { recountSeatsAfterMembershipChange } from "@/lib/seat-recount";
+import { isPaidPlan } from "@/lib/plans";
 
 export async function createWorkspaceAction(
   _prev: ActionResult | null,
@@ -30,6 +36,9 @@ export async function createWorkspaceAction(
   const user = await requireUser();
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { ok: false, error: "Give your workspace a name." };
+
+  const freeSlot = await assertCanCreateFreeWorkspace(user.id);
+  if (!freeSlot.ok) return { ok: false, error: freeSlot.error };
 
   const existingCount = await prisma.membership.count({
     where: { userId: user.id },
@@ -42,6 +51,13 @@ export async function createWorkspaceAction(
       ownerId: user.id,
       memberships: {
         create: { userId: user.id, role: "OWNER" },
+      },
+      billing: {
+        create: {
+          plan: "FREE",
+          status: "ACTIVE",
+          seatQuantity: 5,
+        },
       },
     },
   });
@@ -72,6 +88,31 @@ export async function inviteMemberAction(
       ok: false,
       error: "This workspace is archived. Restore it to invite people.",
     };
+  }
+
+  const seatGate = await assertCanAddMember(workspaceId);
+  if (!seatGate.ok) {
+    return { ok: false, error: seatGate.error };
+  }
+  // Paid at capacity: bump seats before inviting so accept won't exceed billed qty.
+  if (
+    seatGate.ok &&
+    isPaidPlan(seatGate.ent.plan) &&
+    seatGate.ent.memberCount >= seatGate.ent.seatQuantity
+  ) {
+    try {
+      await recountSeatsAfterMembershipChange(workspaceId);
+      // recount bumps to current memberCount; invitee not yet a member — bump +1
+      const { bumpSubscriptionSeats } = await import("@/lib/billing-sync");
+      await bumpSubscriptionSeats(workspaceId, seatGate.ent.memberCount + 1);
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not add a billed seat.";
+      return {
+        ok: false,
+        error: `${message} Update billing or upgrade the plan, then try again.`,
+      };
+    }
   }
 
   const target = String(formData.get("target") ?? "").trim();
@@ -182,6 +223,28 @@ export async function acceptInviteAction(
     invite.targetEmail && user.email && invite.targetEmail === user.email;
   if (!matchesUsername && !matchesEmail) {
     return { ok: false, error: "This invite isn’t for your account." };
+  }
+
+  const seatGate = await assertCanAddMember(invite.workspaceId);
+  if (!seatGate.ok) {
+    return { ok: false, error: seatGate.error };
+  }
+  if (
+    seatGate.ok &&
+    isPaidPlan(seatGate.ent.plan) &&
+    seatGate.ent.memberCount >= seatGate.ent.seatQuantity
+  ) {
+    try {
+      const { bumpSubscriptionSeats } = await import("@/lib/billing-sync");
+      await bumpSubscriptionSeats(
+        invite.workspaceId,
+        seatGate.ent.memberCount + 1,
+      );
+    } catch (err) {
+      const message =
+        err instanceof Error ? err.message : "Could not add a billed seat.";
+      return { ok: false, error: message };
+    }
   }
 
   await prisma.$transaction([

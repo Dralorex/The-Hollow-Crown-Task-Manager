@@ -6,6 +6,7 @@ import { requireUser } from "@/lib/auth";
 import { markRoleActivitySeen } from "@/lib/folder-access";
 import { prisma } from "@/lib/db";
 import { canManagePeople, requireMembership } from "@/lib/permissions";
+import { assertCanCreateCustomRole } from "@/lib/entitlements";
 
 export async function createWorkspaceRoleAction(
   _prev: ActionResult | null,
@@ -17,6 +18,9 @@ export async function createWorkspaceRoleAction(
   if (!canManagePeople(membership.role)) {
     return { ok: false, error: "Only admins can create roles." };
   }
+
+  const roleGate = await assertCanCreateCustomRole(workspaceId);
+  if (!roleGate.ok) return { ok: false, error: roleGate.error };
 
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { ok: false, error: "Role needs a name." };

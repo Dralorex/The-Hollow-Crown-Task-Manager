@@ -1,13 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
+import type Stripe from "stripe";
 import { prisma } from "@/lib/db";
 import { getStripe, getStripeWebhookSecret, isStripeConfigured } from "@/lib/stripe";
+import {
+  handleCheckoutCompleted,
+  handleInvoicePaid,
+  handleInvoicePaymentFailed,
+  syncSubscriptionToWorkspace,
+} from "@/lib/billing-sync";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 
 /**
- * Stripe webhook — verify signature, idempotent store, stub handlers.
- * No plan/seat business logic yet.
+ * Stripe webhook — verify signature, idempotent store, sync entitlements.
  */
 export async function POST(request: NextRequest) {
   if (!isStripeConfigured()) {
@@ -32,7 +38,7 @@ export async function POST(request: NextRequest) {
   }
 
   const rawBody = await request.text();
-  let event;
+  let event: Stripe.Event;
   try {
     event = stripe.webhooks.constructEvent(rawBody, signature, secret);
   } catch (err) {
@@ -49,17 +55,31 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ ok: true, duplicate: true });
   }
 
-  // Stub handlers — log only. Monetization feature work comes later.
-  switch (event.type) {
-    case "checkout.session.completed":
-    case "customer.subscription.updated":
-    case "customer.subscription.deleted":
-    case "invoice.paid":
-    case "invoice.payment_failed":
-      console.info("[stripe:webhook] stub handle", event.type, event.id);
-      break;
-    default:
-      console.info("[stripe:webhook] ignored", event.type, event.id);
+  try {
+    switch (event.type) {
+      case "checkout.session.completed":
+        await handleCheckoutCompleted(
+          event.data.object as Stripe.Checkout.Session,
+        );
+        break;
+      case "customer.subscription.updated":
+      case "customer.subscription.deleted":
+        await syncSubscriptionToWorkspace(
+          event.data.object as Stripe.Subscription,
+        );
+        break;
+      case "invoice.paid":
+        await handleInvoicePaid(event.data.object as Stripe.Invoice);
+        break;
+      case "invoice.payment_failed":
+        await handleInvoicePaymentFailed(event.data.object as Stripe.Invoice);
+        break;
+      default:
+        console.info("[stripe:webhook] ignored", event.type, event.id);
+    }
+  } catch (err) {
+    console.error("[stripe:webhook] handler failed", event.type, err);
+    return NextResponse.json({ error: "Handler failed." }, { status: 500 });
   }
 
   await prisma.stripeWebhookEvent.create({
