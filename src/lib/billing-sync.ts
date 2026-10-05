@@ -27,6 +27,10 @@ function stripeInterval(interval: BillingInterval): "month" | "year" {
 /** Stripe tax category: SaaS — business use (Managed Payments eligibility). */
 const SAAS_TAX_CODE = "txcd_10103001";
 
+async function ensureProductTaxCode(stripe: Stripe, productId: string) {
+  await stripe.products.update(productId, { tax_code: SAAS_TAX_CODE });
+}
+
 async function ensureProduct(
   stripe: Stripe,
   name: string,
@@ -37,9 +41,7 @@ async function ensureProduct(
     (p) => p.metadata?.rowgonKey === metadata.rowgonKey && p.active,
   );
   if (found) {
-    if (!found.tax_code) {
-      await stripe.products.update(found.id, { tax_code: SAAS_TAX_CODE });
-    }
+    await ensureProductTaxCode(stripe, found.id);
     return found.id;
   }
   const created = await stripe.products.create({
@@ -48,6 +50,29 @@ async function ensureProduct(
     tax_code: SAAS_TAX_CODE,
   });
   return created.id;
+}
+
+function priceDataLine(opts: {
+  name: string;
+  unitAmount: number;
+  recurring: { interval: "month" | "year" };
+  rowgonKey: string;
+}): Stripe.Checkout.SessionCreateParams.LineItem {
+  return {
+    quantity: 1,
+    price_data: {
+      currency: "usd",
+      unit_amount: opts.unitAmount,
+      recurring: opts.recurring,
+      // Inline product_data so tax_code is always present on the line item
+      // (avoids stale catalog products without tax_code).
+      product_data: {
+        name: opts.name,
+        tax_code: SAAS_TAX_CODE,
+        metadata: { rowgonKey: opts.rowgonKey },
+      },
+    },
+  };
 }
 
 export async function createCheckoutSubscription(opts: {
@@ -68,14 +93,16 @@ export async function createCheckoutSubscription(opts: {
     opts.interval === "YEARLY"
       ? seatPortionCents(seats) * 10
       : seatPortionCents(seats);
-  const recurring = { interval: stripeInterval(opts.interval) as "month" | "year" };
+  const recurring = {
+    interval: stripeInterval(opts.interval) as "month" | "year",
+  };
 
-  const baseProductId = await ensureProduct(stripe, `Rowgon ${opts.plan}`, {
+  // Keep catalog products in sync for seat bumps / portal; Checkout uses
+  // product_data below so tax_code cannot be missing on line items.
+  await ensureProduct(stripe, `Rowgon ${opts.plan}`, {
     rowgonKey: `base_${opts.plan}`,
   });
-  const seatProductId = await ensureProduct(stripe, "Rowgon seats", {
-    rowgonKey: "seats",
-  });
+  await ensureProduct(stripe, "Rowgon seats", { rowgonKey: "seats" });
 
   const envPriceKey =
     opts.interval === "MONTHLY"
@@ -85,38 +112,41 @@ export async function createCheckoutSubscription(opts: {
 
   const line_items: Stripe.Checkout.SessionCreateParams.LineItem[] = [];
   if (envPrice) {
+    const price = await stripe.prices.retrieve(envPrice, {
+      expand: ["product"],
+    });
+    const productId =
+      typeof price.product === "string" ? price.product : price.product.id;
+    await ensureProductTaxCode(stripe, productId);
     line_items.push({ price: envPrice, quantity: 1 });
   } else {
-    line_items.push({
-      quantity: 1,
-      price_data: {
-        currency: "usd",
-        unit_amount: baseCents,
+    line_items.push(
+      priceDataLine({
+        name: `Rowgon ${opts.plan}`,
+        unitAmount: baseCents,
         recurring,
-        product: baseProductId,
-      },
-    });
+        rowgonKey: `base_${opts.plan}`,
+      }),
+    );
   }
   if (seatCents > 0) {
-    line_items.push({
-      quantity: 1,
-      price_data: {
-        currency: "usd",
-        unit_amount: seatCents,
+    line_items.push(
+      priceDataLine({
+        name: `Rowgon seats (${seats})`,
+        unitAmount: seatCents,
         recurring,
-        product: seatProductId,
-      },
-    });
+        rowgonKey: "seats",
+      }),
+    );
   }
 
-  return stripe.checkout.sessions.create({
+  const params: Stripe.Checkout.SessionCreateParams = {
     mode: "subscription",
     customer: opts.customerId,
     success_url: opts.successUrl,
     cancel_url: opts.cancelUrl,
     client_reference_id: opts.workspaceId,
-    // Account default is Managed Payments on; disable for standard SaaS Checkout
-    // until tax/residency is fully configured. Products still get a SaaS tax_code.
+    // Account default is Managed Payments on; disable for standard SaaS Checkout.
     managed_payments: { enabled: false },
     metadata: {
       workspaceId: opts.workspaceId,
@@ -133,7 +163,20 @@ export async function createCheckoutSubscription(opts: {
       },
     },
     line_items,
-  });
+  };
+
+  try {
+    return await stripe.checkout.sessions.create(params);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    // Retry once without managed_payments key if the API rejects the param,
+    // but still with tax_code on product_data / env products.
+    if (/managed_payments/i.test(message)) {
+      const { managed_payments: _ignored, ...rest } = params;
+      return stripe.checkout.sessions.create(rest);
+    }
+    throw err;
+  }
 }
 
 export async function syncSubscriptionToWorkspace(
