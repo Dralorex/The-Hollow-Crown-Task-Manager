@@ -1,18 +1,8 @@
 /**
- * ~30 min multi-system load mix with 50 seeded users.
+ * Realistic ~30 min session mix for ~50 seeded users.
  *
- * Hits in one run (when configured):
- *   - Core: /app, workspace, chat, pulse, presence, Ably auth, chat messages
- *   - R2: upload → download → delete cycles (Admin+ load users)
- *   - Cron: retention / seat-renewal / dunning / weekly-digest stubs
- *   - Stripe: ensure customer + cheap test-mode API pings (no live charges)
- *   - SSO: GET /api/sso/start (scaffold; usually disabled)
- *
- * Usage:
- *   LOAD_TEST_BASE_URL=http://localhost:3000 \
- *   LOAD_TEST_SECRET=... \
- *   CRON_SECRET=... \
- *   npm run load-test:run
+ * Not a chat-spam bot farm: personas + long idle gaps mimic average task-manager use
+ * (many lurkers, some workers, a few chatty, rare admin/R2/Stripe).
  */
 import "dotenv/config";
 import { readFile } from "node:fs/promises";
@@ -21,6 +11,8 @@ import {
   CREDENTIALS_PATH,
   DEFAULT_DURATION_MIN,
   type LoadCredentials,
+  personaActions,
+  personaSleepMs,
 } from "./config";
 
 type Stats = {
@@ -31,6 +23,7 @@ type Stats = {
     string,
     { ok: number; fail: number; skip: number; msTotal: number }
   >;
+  byPersona: Record<string, { actions: number; messages: number }>;
 };
 
 function assertSafeBaseUrl(baseUrl: string) {
@@ -42,7 +35,7 @@ function assertSafeBaseUrl(baseUrl: string) {
     host.endsWith(".rowgon.com");
   if (prodLike && process.env.LOAD_TEST_ALLOW_PROD !== "1") {
     throw new Error(
-      `Refusing to load-test ${host}. Use staging/Preview/local, or set LOAD_TEST_ALLOW_PROD=1 consciously.`,
+      `Refusing to load-test ${host}. Use staging/Preview/local, or set LOAD_TEST_ALLOW_PROD=1.`,
     );
   }
 }
@@ -96,6 +89,23 @@ async function main() {
   if (!creds.users?.length) {
     throw new Error("No users in credentials file. Run seed first.");
   }
+  // Back-compat if someone has old credentials without personas
+  for (const u of creds.users) {
+    if (!u.persona) {
+      (u as { persona: string }).persona =
+        u.index <= 2 ? "admin" : "worker";
+    }
+    if (!u.chatGroupId) {
+      u.chatGroupId = creds.hqGroupId || (creds as { groupId?: string }).groupId || "";
+    }
+  }
+  if (!creds.folderIds?.length && (creds as { folderId?: string }).folderId) {
+    creds.folderIds = [(creds as { folderId: string }).folderId];
+  }
+  if (!creds.hqGroupId && (creds as { groupId?: string }).groupId) {
+    creds.hqGroupId = (creds as { groupId: string }).groupId;
+  }
+  if (!creds.sideGroupIds) creds.sideGroupIds = [];
 
   const vuCount = Math.max(
     1,
@@ -112,17 +122,34 @@ async function main() {
     console.log(`  ${k.padEnd(12)} ${v}`);
   }
 
+  const mix = creds.users.reduce(
+    (acc, u) => {
+      acc[u.persona] = (acc[u.persona] ?? 0) + 1;
+      return acc;
+    },
+    {} as Record<string, number>,
+  );
+  console.log("\n=== Persona mix (seeded) ===");
+  console.log(mix);
+  console.log(
+    "\nPacing: lurkers idle 3–8m; workers 1.5–4m; chatty 45s–2.5m — not constant spam.",
+  );
+
   console.log(`\nBase URL:     ${baseUrl}`);
   console.log(`Duration:     ${durationMin} min`);
   console.log(`Workers:      ${vuCount}`);
-  console.log(`Users avail:  ${creds.users.length}`);
   console.log("Starting in 3s…");
   await sleep(3000);
 
-  const stats: Stats = { ok: 0, fail: 0, skip: 0, byAction: {} };
+  const stats: Stats = {
+    ok: 0,
+    fail: 0,
+    skip: 0,
+    byAction: {},
+    byPersona: {},
+  };
   const endsAt = Date.now() + durationMs;
 
-  // Owner ensures Stripe customer once up front (test mode, free)
   if (secret && caps.stripe === "ready") {
     const owner = creds.users[0]!;
     const started = Date.now();
@@ -137,10 +164,28 @@ async function main() {
     );
   }
 
+  // Social users share birthdays once near start (realistic one-time setup)
+  if (secret) {
+    await Promise.all(
+      creds.users
+        .filter((u) => u.persona === "social")
+        .map(async (u) => {
+          await sleep(Math.floor(Math.random() * 20_000));
+          const started = Date.now();
+          const r = await postAction(baseUrl, u.sessionToken, secret, {
+            type: "share_birthday",
+            workspaceId: creds.workspaceId,
+          });
+          const result =
+            r.status === 200 ? "ok" : r.status === 503 ? "skip" : "fail";
+          track(stats, "share_birthday", result, Date.now() - started);
+        }),
+    );
+  }
+
   const workers = Array.from({ length: vuCount }, (_, i) =>
     workerLoop({
       user: creds.users[i]!,
-      isAdminCapable: i < 2, // owner + admin from seed
       creds,
       baseUrl,
       secret,
@@ -170,6 +215,7 @@ async function main() {
 
   console.log("\n=== Load test finished ===");
   console.log(`Total ok=${stats.ok} fail=${stats.fail} skip=${stats.skip}`);
+  console.log("\nBy action:");
   for (const [action, s] of Object.entries(stats.byAction).sort()) {
     const n = s.ok + s.fail + s.skip;
     const avg = n ? Math.round(s.msTotal / n) : 0;
@@ -177,8 +223,12 @@ async function main() {
       `  ${action.padEnd(16)} ok=${s.ok} fail=${s.fail} skip=${s.skip} avgMs=${avg}`,
     );
   }
+  console.log("\nBy persona (actions / messages):");
+  for (const [p, s] of Object.entries(stats.byPersona).sort()) {
+    console.log(`  ${p.padEnd(10)} actions=${s.actions} messages=${s.messages}`);
+  }
   console.log(
-    "\nCheck Neon / Vercel / Ably / R2 / Stripe (test) / Cron logs for this window.",
+    "\nCheck Neon / Vercel / Ably / R2 / Stripe test / Cron for this window.",
   );
 }
 
@@ -204,7 +254,8 @@ async function probeSystems(
     headers: { Cookie: cookie },
     redirect: "manual",
   });
-  const core = home.status >= 200 && home.status < 400 ? "ready" : `fail_${home.status}`;
+  const core =
+    home.status >= 200 && home.status < 400 ? "ready" : `fail_${home.status}`;
 
   const ably = await fetch(`${baseUrl}/api/ably/auth`, {
     headers: { Cookie: cookie },
@@ -284,7 +335,6 @@ async function postAction(
 
 async function workerLoop(opts: {
   user: LoadCredentials["users"][number];
-  isAdminCapable: boolean;
   creds: LoadCredentials;
   baseUrl: string;
   secret?: string;
@@ -293,12 +343,15 @@ async function workerLoop(opts: {
   stats: Stats;
 }) {
   const cookie = `rowgon_session=${opts.user.sessionToken}`;
-  const actions = buildActionPlan({
+  const persona = opts.user.persona;
+  const actions = personaActions(persona, {
     writes: Boolean(opts.secret),
-    r2: opts.isAdminCapable && opts.caps.r2 === "ready",
-    stripe: opts.isAdminCapable && opts.caps.stripe === "ready",
-    sso: true,
+    r2: persona === "admin" && opts.caps.r2 === "ready",
+    stripe: persona === "admin" && opts.caps.stripe === "ready",
   });
+
+  // Stagger start so 50 people don't synchronize
+  await sleep(Math.floor(Math.random() * 60_000));
 
   while (Date.now() < opts.endsAt) {
     const action = pick(actions);
@@ -311,14 +364,20 @@ async function workerLoop(opts: {
         sessionToken: opts.user.sessionToken,
         secret: opts.secret,
         workspaceId: opts.creds.workspaceId,
-        groupId: opts.creds.groupId,
+        folderIds: opts.creds.folderIds ?? [],
+        groupId: opts.user.chatGroupId || opts.creds.hqGroupId,
+        hqGroupId: opts.creds.hqGroupId,
         username: opts.user.username,
       });
     } catch {
       result = "fail";
     }
     track(opts.stats, action, result, Date.now() - started);
-    await sleep(2000 + Math.floor(Math.random() * 4000));
+    const p = (opts.stats.byPersona[persona] ??= { actions: 0, messages: 0 });
+    p.actions += 1;
+    if (action === "message" && result === "ok") p.messages += 1;
+
+    await sleep(personaSleepMs(persona));
   }
 }
 
@@ -338,8 +397,8 @@ async function cronLoop(opts: {
     "weekly-digest",
   ] as const;
 
-  // First hit soon, then every ~2.5 minutes
-  await sleep(5_000);
+  // Background jobs: a few times per half hour, not every minute
+  await sleep(90_000);
   while (Date.now() < opts.endsAt) {
     for (const name of routes) {
       const started = Date.now();
@@ -354,42 +413,8 @@ async function cronLoop(opts: {
       }
       track(opts.stats, `cron_${name}`, result, Date.now() - started);
     }
-    await sleep(150_000);
+    await sleep(480_000); // ~8 min between cron sweeps
   }
-}
-
-function buildActionPlan(opts: {
-  writes: boolean;
-  r2: boolean;
-  stripe: boolean;
-  sso: boolean;
-}): string[] {
-  const plan = [
-    "app_home",
-    "app_home",
-    "workspace",
-    "workspace",
-    "chat_page",
-    "pulse",
-    "pulse",
-    "ably_auth",
-    "presence",
-    "presence",
-  ];
-  if (opts.writes) {
-    plan.push("message", "message", "heartbeat");
-  }
-  if (opts.r2) {
-    // Fewer than chat — still exercises Class A/B + Neon metadata each cycle
-    plan.push("r2_cycle");
-  }
-  if (opts.stripe) {
-    plan.push("stripe_ping");
-  }
-  if (opts.sso) {
-    plan.push("sso_start");
-  }
-  return plan;
 }
 
 async function runAction(
@@ -400,7 +425,9 @@ async function runAction(
     sessionToken: string;
     secret?: string;
     workspaceId: string;
+    folderIds: string[];
     groupId: string;
+    hqGroupId: string;
     username: string;
   },
 ): Promise<"ok" | "fail" | "skip"> {
@@ -438,41 +465,59 @@ async function runAction(
     return "fail";
   }
   if (action === "presence") {
-    const res = await fetch(
-      `${ctx.baseUrl}/api/chat/${ctx.groupId}/presence`,
-      { headers },
-    );
+    const gid = ctx.groupId || ctx.hqGroupId;
+    const res = await fetch(`${ctx.baseUrl}/api/chat/${gid}/presence`, {
+      headers,
+    });
     return res.ok ? "ok" : "fail";
   }
   if (action === "sso_start") {
     const res = await fetch(`${ctx.baseUrl}/api/sso/start`, {
       redirect: "manual",
     });
-    // Disabled scaffold returns JSON 200/403; enabled may 302
     if (res.status === 200 || res.status === 302 || res.status === 403) {
       return "ok";
     }
     return "fail";
   }
-  if (
-    action === "message" ||
-    action === "heartbeat" ||
-    action === "r2_cycle" ||
-    action === "stripe_ping"
-  ) {
+
+  const writeTypes = new Set([
+    "message",
+    "heartbeat",
+    "r2_cycle",
+    "stripe_ping",
+    "create_task",
+    "claim_task",
+    "complete_task",
+    "review_task",
+    "share_birthday",
+  ]);
+  if (writeTypes.has(action)) {
     if (!ctx.secret) return "skip";
-    const body: Record<string, unknown> =
-      action === "message"
-        ? {
-            type: "message",
-            groupId: ctx.groupId,
-            body: `load tick from ${ctx.username} @ ${new Date().toISOString()}`,
-          }
-        : action === "heartbeat"
-          ? { type: "heartbeat", groupId: ctx.groupId }
-          : action === "r2_cycle"
-            ? { type: "r2_cycle", workspaceId: ctx.workspaceId }
-            : { type: "stripe_ping" };
+    const folderId =
+      ctx.folderIds[Math.floor(Math.random() * Math.max(1, ctx.folderIds.length))];
+    const body: Record<string, unknown> = { type: action };
+    if (
+      action === "message" ||
+      action === "heartbeat" ||
+      action === "presence"
+    ) {
+      body.groupId = ctx.groupId || ctx.hqGroupId;
+      if (action === "message") {
+        body.body = casualMessage(ctx.username);
+      }
+    }
+    if (
+      action === "r2_cycle" ||
+      action === "create_task" ||
+      action === "claim_task" ||
+      action === "complete_task" ||
+      action === "review_task" ||
+      action === "share_birthday"
+    ) {
+      body.workspaceId = ctx.workspaceId;
+    }
+    if (action === "create_task" && folderId) body.folderId = folderId;
 
     const res = await postAction(
       ctx.baseUrl,
@@ -480,9 +525,30 @@ async function runAction(
       ctx.secret,
       body,
     );
-    if (res.status === 200) return "ok";
+    if (res.status === 200) {
+      try {
+        const json = (await res.json()) as { skipped?: boolean };
+        if (json.skipped) return "skip";
+      } catch {
+        // ok
+      }
+      return "ok";
+    }
     if (res.status === 503) return "skip";
     return "fail";
   }
   return "fail";
+}
+
+function casualMessage(username: string) {
+  const lines = [
+    `hey — quick update from ${username}`,
+    "taking a look at the board",
+    "claimed one, will ping when done",
+    "anyone free to review later?",
+    "standup note: still in progress",
+    "thanks!",
+    "moving this to review",
+  ];
+  return pick(lines);
 }
