@@ -66,6 +66,82 @@ If the build says the connection URL is empty, the env vars were not applied to 
 | `npx prisma migrate deploy` | Apply migrations |
 | `npx prisma studio` | Browse data |
 
+## Infra bootstrap (payments, files, cron, SSO)
+
+Scaffolding only — **no pricing UI, seat ladders, or entitlement enforcement yet**.
+Ready for monetization feature work next. **Virus scanning is planned later** (hook
+comments around upload confirm); do not enable a scanner in this phase.
+
+### Stripe (test mode)
+
+1. Create a [Stripe](https://dashboard.stripe.com/test/apikeys) account and copy **test** keys into `.env`:
+   - `STRIPE_SECRET_KEY`
+   - `STRIPE_PUBLISHABLE_KEY` (optional until client Checkout)
+   - `STRIPE_WEBHOOK_SECRET` (from CLI or Dashboard webhook)
+2. Forward webhooks locally:
+
+```bash
+stripe listen --forward-to localhost:3000/api/stripe/webhook
+# then:
+stripe trigger checkout.session.completed
+```
+
+3. A verified event is stored in `StripeWebhookEvent` (idempotent).  
+4. Server helpers: `ensureStripeCustomerAction`, `createBillingPortalSessionAction` (Owner-gated when a workspace is supplied). Secrets never enter client bundles.
+
+### Cloudflare R2 (private files)
+
+Neon is **not** file storage. Bytes go in R2; metadata in `StoredObject`.
+
+1. Create a **private** R2 bucket + API token with object read/write.
+2. Set `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`, `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`, `R2_ENDPOINT`.
+3. Server actions (Admin+): `requestUploadUrlAction` → client PUT → `confirmUploadAction` → `requestDownloadUrlAction` / `deleteStoredObjectAction`.
+4. Temporary hard max **25 MB** + MIME allowlist (not plan-based yet).
+5. Virus scan: **deferred** — see comments in `src/app/actions/storage.ts`.
+6. Local connectivity check (no UI required):
+
+```bash
+npm run smoke:r2
+```
+
+### Vercel Cron
+
+Routes (all require `CRON_SECRET`):
+
+| Path | Schedule (UTC) | Notes |
+|------|----------------|-------|
+| `/api/cron/retention-purge` | daily 06:00 | stub |
+| `/api/cron/seat-renewal` | hourly | stub |
+| `/api/cron/dunning` | daily 06:30 | stub |
+| `/api/cron/weekly-digest` | Mondays 14:00 | real digest send (opt-in users; skips empty) |
+
+Local smoke test:
+
+```bash
+curl -H "Authorization: Bearer $CRON_SECRET" http://localhost:3000/api/cron/retention-purge
+```
+
+Missing/wrong secret → `401`. Runs are logged in `CronRun`.
+
+### WorkOS SSO (disabled by default)
+
+Password auth remains primary. Set `ENABLE_SSO=true` only while testing.
+
+1. Configure `WORKOS_API_KEY`, `WORKOS_CLIENT_ID`, `WORKOS_REDIRECT_URI`.
+2. Start: `GET /api/sso/start?organization=org_…` (or `connection=` / scaffold `provider=GoogleOAuth`).
+3. Callback: `/api/sso/callback` maps an existing user by email / `workosUserId`.
+4. Production should keep `ENABLE_SSO=false` until the Enterprise phase.
+
+### Security checklist
+
+- [x] No secrets in client bundles (`server-only` Stripe/R2/WorkOS modules)
+- [x] Stripe webhook signature verified + idempotent event ids
+- [x] R2 private + short-TTL signed URLs; no public listing
+- [x] Cron routes secret-protected
+- [x] SSO flag default false
+- [x] Virus scan deferred (commented hooks only)
+- [x] No plan/seat business logic in this pass
+
 ## Roles
 
 | Role | Content | Invite | Review |

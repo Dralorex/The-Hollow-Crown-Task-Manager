@@ -159,17 +159,31 @@ export function RealtimeProvider({
       if (matches) router.refresh();
     };
 
-    void channel.subscribe("badges", onBadges);
-    void channel.subscribe("badge-delta", onBadgeDelta);
-    void channel.subscribe(CHAT_MESSAGE_ABLY, onChatMessage);
-    void channel.subscribe("refresh", onRefresh);
+    // Subscribe returns a Promise that rejects with "Connection closed" if we
+    // tear down (Strict Mode remount / idle pause) before attach finishes.
+    // `void` alone does not attach a rejection handler.
+    const ignoreAblyTeardown = () => {};
+    void channel.subscribe("badges", onBadges).catch(ignoreAblyTeardown);
+    void channel.subscribe("badge-delta", onBadgeDelta).catch(ignoreAblyTeardown);
+    void channel.subscribe(CHAT_MESSAGE_ABLY, onChatMessage).catch(ignoreAblyTeardown);
+    void channel.subscribe("refresh", onRefresh).catch(ignoreAblyTeardown);
 
     return () => {
-      channel.unsubscribe("badges", onBadges);
-      channel.unsubscribe("badge-delta", onBadgeDelta);
-      channel.unsubscribe(CHAT_MESSAGE_ABLY, onChatMessage);
-      channel.unsubscribe("refresh", onRefresh);
-      client.close();
+      try {
+        channel.unsubscribe("badges", onBadges);
+        channel.unsubscribe("badge-delta", onBadgeDelta);
+        channel.unsubscribe(CHAT_MESSAGE_ABLY, onChatMessage);
+        channel.unsubscribe("refresh", onRefresh);
+      } catch {
+        /* ignore */
+      }
+      try {
+        // close() is sync/void; in-flight subscribe/auth promises reject when
+        // the connection drops — those are handled via .catch above.
+        client.close();
+      } catch {
+        /* ignore */
+      }
     };
     // pathname is read via ref so nav does not tear down the Ably connection.
   }, [enabled, userId, pollingActive, router]);

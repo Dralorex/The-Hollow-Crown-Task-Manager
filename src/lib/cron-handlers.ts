@@ -1,0 +1,81 @@
+import "server-only";
+import { prisma } from "@/lib/db";
+import {
+  buildWeeklyDigest,
+  digestIsEmpty,
+  weeklyDigestEmail,
+} from "@/lib/weekly-digest";
+import { sendEmail } from "@/lib/mail";
+
+/** Stub: retention purge will delete expired chat messages / archives later. */
+export async function runRetentionPurgeStub() {
+  const pendingChats = await prisma.chatGroup.count();
+  return {
+    processed: 0,
+    detail: `noop; chatGroups=${pendingChats}`,
+  };
+}
+
+/** Stub: seat renewal will drop billed seats at period end later. */
+export async function runSeatRenewalStub() {
+  return {
+    processed: 0,
+    detail: "noop; seat renewal not implemented yet",
+  };
+}
+
+/** Stub: dunning emails for failed payments later. */
+export async function runDunningStub() {
+  return {
+    processed: 0,
+    detail: "noop; dunning not implemented yet",
+  };
+}
+
+/**
+ * Weekly digest — wraps existing builder; skips empty digests.
+ * Still opt-in via User.weeklyDigestEnabled.
+ */
+export async function runWeeklyDigestJob() {
+  const users = await prisma.user.findMany({
+    where: {
+      weeklyDigestEnabled: true,
+      email: { not: null },
+      deletedAt: null,
+    },
+    select: { id: true, email: true, username: true },
+  });
+
+  let sent = 0;
+  let skippedEmpty = 0;
+  for (const user of users) {
+    if (!user.email) continue;
+    const payload = await buildWeeklyDigest(user.id);
+    if (!payload) continue;
+    if (digestIsEmpty(payload)) {
+      skippedEmpty += 1;
+      continue;
+    }
+    const mail = weeklyDigestEmail(payload);
+    const result = await sendEmail({
+      to: user.email,
+      subject: mail.subject,
+      html: mail.html,
+      text: mail.text,
+    });
+    if (!result.ok) {
+      console.error("[cron:weekly-digest] fail", user.username, result.error);
+      continue;
+    }
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { weeklyDigestLastSentAt: new Date() },
+    });
+    sent += 1;
+  }
+
+  return {
+    processed: sent,
+    detail: `sent=${sent} skippedEmpty=${skippedEmpty} candidates=${users.length}`,
+  };
+}

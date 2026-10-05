@@ -85,6 +85,10 @@ model User {
   /** Soft-delete: username is freed; chats keep history labeled with deletedUsername. */
   deletedAt             DateTime?
   deletedUsername       String?
+  /** Stripe Customer id (test/live) — billing scaffold; no plan enforcement yet. */
+  stripeCustomerId      String?  @unique
+  /** WorkOS User id — SSO scaffold only; password auth remains primary. */
+  workosUserId          String?  @unique
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 
@@ -120,6 +124,7 @@ model User {
   workspaceRoleSeens    WorkspaceRoleSeen[]
   taskActivities        TaskActivity[]       @relation("TaskActivityActor")
   messageMentions       MessageMention[]     @relation("MentionedUser")
+  storedObjects         StoredObject[]
 
   @@index([deletedAt])
 }
@@ -223,9 +228,13 @@ model Workspace {
   calendarFilters CalendarWorkspaceFilter[]
   customRoles WorkspaceRole[]
   folderTemplates FolderTemplate[]
+  storedObjects StoredObject[]
+  organizationId String?
+  organization   Organization? @relation(fields: [organizationId], references: [id], onDelete: SetNull)
 
   @@index([ownerId])
   @@index([archivedAt])
+  @@index([organizationId])
 }
 
 model Membership {
@@ -725,4 +734,67 @@ model Notification {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, read])
+}
+
+/**
+ * Infra bootstrap models — billing / storage / cron / SSO scaffolding.
+ * No plan/seat enforcement yet. Virus scanning intentionally deferred.
+ */
+
+/** Stripe webhook idempotency — store processed event ids. */
+model StripeWebhookEvent {
+  id          String   @id // Stripe event id (evt_…)
+  type        String
+  processedAt DateTime @default(now())
+
+  @@index([type])
+  @@index([processedAt])
+}
+
+/**
+ * File metadata only — bytes live in Cloudflare R2 (or compatible object store).
+ * Virus scan: deferred; wrap confirmUpload / finalize later before marking available.
+ */
+model StoredObject {
+  id           String    @id @default(cuid())
+  workspaceId  String
+  key          String    @unique
+  filename     String
+  contentType  String
+  bytes        Int
+  uploadedById String
+  createdAt    DateTime  @default(now())
+  deletedAt    DateTime?
+
+  workspace  Workspace @relation(fields: [workspaceId], references: [id], onDelete: Cascade)
+  uploadedBy User      @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
+
+  @@index([workspaceId, deletedAt])
+  @@index([uploadedById])
+}
+
+/** Optional run log for Vercel Cron stubs. */
+model CronRun {
+  id         String    @id @default(cuid())
+  name       String
+  startedAt  DateTime  @default(now())
+  finishedAt DateTime?
+  ok         Boolean?
+  detail     String?
+
+  @@index([name, startedAt])
+}
+
+/**
+ * Enterprise Organization stub — WorkOS org id only for now.
+ * Shared seats / org billing / SSO product features come later.
+ */
+model Organization {
+  id          String   @id @default(cuid())
+  name        String
+  workosOrgId String?  @unique
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  workspaces Workspace[]
 }
