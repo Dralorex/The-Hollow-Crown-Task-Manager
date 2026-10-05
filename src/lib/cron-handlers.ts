@@ -16,11 +16,41 @@ export async function runRetentionPurgeStub() {
   };
 }
 
-/** Stub: seat renewal will drop billed seats at period end later. */
+/**
+ * Seat renewal — drop billed quantity to active members when
+ * autoCloseUnusedSeats is on (Stripe quantity sync is Phase 2 follow-up).
+ */
 export async function runSeatRenewalStub() {
+  const due = await prisma.workspaceBilling.findMany({
+    where: {
+      plan: { not: "FREE" },
+      autoCloseUnusedSeats: true,
+      currentPeriodEnd: { lte: new Date() },
+    },
+    select: {
+      workspaceId: true,
+      seatQuantity: true,
+      workspace: { select: { _count: { select: { memberships: true } } } },
+    },
+    take: 50,
+  });
+
+  let adjusted = 0;
+  for (const row of due) {
+    const members = row.workspace._count.memberships;
+    const next = Math.max(5, members);
+    if (next < row.seatQuantity) {
+      await prisma.workspaceBilling.update({
+        where: { workspaceId: row.workspaceId },
+        data: { seatQuantity: next },
+      });
+      adjusted += 1;
+    }
+  }
+
   return {
-    processed: 0,
-    detail: "noop; seat renewal not implemented yet",
+    processed: adjusted,
+    detail: `candidates=${due.length} lowered=${adjusted}`,
   };
 }
 

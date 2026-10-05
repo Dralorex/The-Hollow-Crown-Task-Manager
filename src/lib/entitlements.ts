@@ -95,16 +95,19 @@ export function effectiveSeatCap(ent: WorkspaceEntitlements): number {
   return Math.min(planMax, billed);
 }
 
-export async function assertCanAddMember(workspaceId: string): Promise<
-  | { ok: true; ent: WorkspaceEntitlements }
-  | { ok: false; error: string; upgradeHint?: PlanId }
-> {
+export type SeatAddDecision =
+  | { ok: true; ent: WorkspaceEntitlements; shouldBumpSeats: boolean }
+  | { ok: false; error: string; upgradeHint?: PlanId; needsAutoAddPrompt?: boolean };
+
+export async function assertCanAddMember(
+  workspaceId: string,
+): Promise<SeatAddDecision> {
   const ent = await getWorkspaceEntitlements(workspaceId);
   if (!ent.billingOk && isPaidPlan(ent.plan)) {
     return {
       ok: false,
       error:
-        "Billing is past due. Update the payment method in Billing to invite people.",
+        "Billing is past due. Update the payment method under Settings → Manage Workspaces.",
     };
   }
   const cap = effectiveSeatCap(ent);
@@ -113,21 +116,51 @@ export async function assertCanAddMember(workspaceId: string): Promise<
       return {
         ok: false,
         error:
-          "Free workspaces include 5 people. Upgrade this workspace to invite more — basics stay free for personal use.",
+          "Free workspaces include 5 people. Upgrade under Settings → Manage Workspaces — basics stay free for personal use.",
         upgradeHint: "TEAM",
       };
     }
     if (ent.caps.maxSeats != null && ent.memberCount >= ent.caps.maxSeats) {
       return {
         ok: false,
-        error: `This plan allows up to ${ent.caps.maxSeats} seats. Upgrade the plan to add more people.`,
+        error: `This plan allows up to ${ent.caps.maxSeats} seats. Upgrade the plan under Settings → Manage Workspaces.`,
         upgradeHint: ent.plan === "TEAM" ? "BUSINESS" : "ENTERPRISE",
       };
     }
-    // Paid under plan max but at billed quantity — caller may bump seats.
-    return { ok: true, ent };
+    const billing = await prisma.workspaceBilling.findUnique({
+      where: { workspaceId },
+      select: { autoAddSeats: true },
+    });
+    if (!billing?.autoAddSeats) {
+      return {
+        ok: false,
+        error:
+          "You’re at your seat limit. Turn on auto-add seats (prorated for the time left in the period) under Settings → Manage Workspaces, or raise your seat package.",
+        needsAutoAddPrompt: true,
+      };
+    }
+    return { ok: true, ent, shouldBumpSeats: true };
   }
-  return { ok: true, ent };
+  return { ok: true, ent, shouldBumpSeats: false };
+}
+
+/** Compact workspace banner: only when over / at a hard limit needing action. */
+export function isWorkspaceOverLimit(ent: WorkspaceEntitlements): boolean {
+  if (!ent.billingOk && isPaidPlan(ent.plan)) return true;
+  if (ent.memberCount > effectiveSeatCap(ent)) return true;
+  if (
+    ent.caps.maxCustomRoles != null &&
+    ent.customRoleCount > ent.caps.maxCustomRoles
+  ) {
+    return true;
+  }
+  if (
+    ent.caps.maxGroupChats != null &&
+    ent.groupChatCount > ent.caps.maxGroupChats
+  ) {
+    return true;
+  }
+  return false;
 }
 
 export async function assertCanCreateCustomRole(workspaceId: string): Promise<

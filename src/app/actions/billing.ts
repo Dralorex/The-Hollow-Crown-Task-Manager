@@ -188,14 +188,40 @@ export async function startWorkspaceCheckoutAction(
   }
 
   const ent = await getWorkspaceEntitlements(workspaceId);
-  const seats = Math.max(ent.memberCount, 5);
-  const max = PLANS[plan].maxSeats;
-  if (max != null && seats > max) {
+  const seatsRaw = Number(formData.get("seats") ?? 0);
+  const seats = Math.max(
+    Number.isFinite(seatsRaw) ? Math.floor(seatsRaw) : 0,
+    ent.memberCount,
+    5,
+  );
+  const max = PLANS[plan].maxSeats ?? 1000;
+  if (seats > max) {
     return {
       ok: false,
       error: `${PLANS[plan].name} allows up to ${max} seats. Remove members or choose a higher plan.`,
     };
   }
+
+  const autoCloseUnusedSeats =
+    String(formData.get("autoCloseUnusedSeats") ?? "true") === "true";
+  const autoAddSeats = String(formData.get("autoAddSeats") ?? "false") === "true";
+
+  await prisma.workspaceBilling.upsert({
+    where: { workspaceId },
+    create: {
+      workspaceId,
+      plan: "FREE",
+      status: "ACTIVE",
+      seatQuantity: seats,
+      autoCloseUnusedSeats,
+      autoAddSeats,
+    },
+    update: {
+      autoCloseUnusedSeats,
+      autoAddSeats,
+      seatQuantity: seats,
+    },
+  });
 
   const customerResult = await ensureStripeCustomerAction(null, formData);
   if (!customerResult.ok || !customerResult.customerId) {
@@ -215,9 +241,9 @@ export async function startWorkspaceCheckoutAction(
       plan,
       interval,
       seats,
-      // {CHECKOUT_SESSION_ID} is filled by Stripe so we can sync without waiting on webhooks.
-      successUrl: `${base}/app/w/${workspaceId}?billing=success&session_id={CHECKOUT_SESSION_ID}`,
-      cancelUrl: `${base}/app/w/${workspaceId}?billing=cancel`,
+      // Return to Settings → Manage Workspaces after Checkout.
+      successUrl: `${base}/app/settings?billing=success&workspaceId=${workspaceId}&session_id={CHECKOUT_SESSION_ID}`,
+      cancelUrl: `${base}/app/settings?billing=cancel&workspaceId=${workspaceId}`,
     });
     if (!session.url) {
       return { ok: false, error: "Stripe did not return a checkout URL." };
@@ -232,6 +258,37 @@ export async function startWorkspaceCheckoutAction(
     console.error("[billing:checkout]", message);
     return { ok: false, error: message };
   }
+}
+
+export async function updateWorkspaceBillingPrefsAction(
+  _prev: BillingActionResult | null,
+  formData: FormData,
+): Promise<BillingActionResult> {
+  const workspaceId = String(formData.get("workspaceId") ?? "").trim();
+  if (!workspaceId) return { ok: false, error: "Missing workspace." };
+  try {
+    await requireOwner(workspaceId);
+  } catch {
+    return { ok: false, error: "Only the workspace owner can change billing prefs." };
+  }
+  const autoCloseUnusedSeats =
+    String(formData.get("autoCloseUnusedSeats") ?? "true") === "true";
+  const autoAddSeats = String(formData.get("autoAddSeats") ?? "false") === "true";
+  await prisma.workspaceBilling.upsert({
+    where: { workspaceId },
+    create: {
+      workspaceId,
+      plan: "FREE",
+      status: "ACTIVE",
+      seatQuantity: 5,
+      autoCloseUnusedSeats,
+      autoAddSeats,
+    },
+    update: { autoCloseUnusedSeats, autoAddSeats },
+  });
+  revalidatePath("/app/settings");
+  revalidatePath(`/app/w/${workspaceId}`);
+  return { ok: true, message: "Billing preferences saved." };
 }
 
 export async function getWorkspaceBillingSummaryAction(workspaceId: string) {

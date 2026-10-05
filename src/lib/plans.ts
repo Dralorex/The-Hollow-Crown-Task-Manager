@@ -145,3 +145,89 @@ export function parsePlanId(value: string | null | undefined): PlanId | null {
   }
   return null;
 }
+
+/** Preset seat packages shown in Manage Workspaces (plus custom). */
+export const SEAT_PACKAGES: Record<
+  Exclude<PlanId, "FREE">,
+  { presets: number[]; maxLabel: string }
+> = {
+  TEAM: { presets: [10, 15, 20], maxLabel: "Max (25)" },
+  BUSINESS: { presets: [10, 25, 50, 75], maxLabel: "Max (100)" },
+  ENTERPRISE: {
+    presets: [50, 100, 150, 200, 250, 500, 1000],
+    maxLabel: "Max (1000)",
+  },
+};
+
+export function planMaxSeatsOrCap(plan: PlanId): number {
+  if (plan === "TEAM") return 25;
+  if (plan === "BUSINESS") return 100;
+  if (plan === "ENTERPRISE") return 1000;
+  return SEAT_FREE_INCLUDED;
+}
+
+/** Side-by-side rows for Settings → Manage Workspaces. */
+export const PLAN_COMPARE_ROWS: {
+  label: string;
+  free: string;
+  team: string;
+  business: string;
+  enterprise: string;
+}[] = [
+  {
+    label: "Base / month",
+    free: "$0",
+    team: "$12",
+    business: "$30",
+    enterprise: "$80",
+  },
+  {
+    label: "Seats",
+    free: "5",
+    team: "Up to 25 (1–5 free)",
+    business: "Up to 100 (1–5 free)",
+    enterprise: "Typed pool (1–5 free)",
+  },
+  {
+    label: "Seat price (extra)",
+    free: "—",
+    team: "$2.50 / $5 / $10 bands",
+    business: "$2.50 / $5 / $10 bands",
+    enterprise: "$2.50 / $5 / $10 bands",
+  },
+  {
+    label: "Custom roles",
+    free: "2",
+    team: "10",
+    business: "Unlimited",
+    enterprise: "Unlimited",
+  },
+  {
+    label: "Group chats",
+    free: "1",
+    team: "Unlimited",
+    business: "Unlimited",
+    enterprise: "Unlimited",
+  },
+  {
+    label: "Storage",
+    free: "—",
+    team: "5 GB",
+    business: "50 GB",
+    enterprise: "Org pooled",
+  },
+  {
+    label: "Audit / bulk admin",
+    free: "—",
+    team: "—",
+    business: "Yes",
+    enterprise: "Yes + org",
+  },
+  {
+    label: "SSO",
+    free: "—",
+    team: "—",
+    business: "—",
+    enterprise: "Included (when enabled)",
+  },
+];

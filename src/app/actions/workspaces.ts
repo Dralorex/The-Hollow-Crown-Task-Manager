@@ -26,8 +26,6 @@ import {
   assertCanAddMember,
   assertCanCreateFreeWorkspace,
 } from "@/lib/entitlements";
-import { recountSeatsAfterMembershipChange } from "@/lib/seat-recount";
-import { isPaidPlan } from "@/lib/plans";
 
 export async function createWorkspaceAction(
   _prev: ActionResult | null,
@@ -94,15 +92,8 @@ export async function inviteMemberAction(
   if (!seatGate.ok) {
     return { ok: false, error: seatGate.error };
   }
-  // Paid at capacity: bump seats before inviting so accept won't exceed billed qty.
-  if (
-    seatGate.ok &&
-    isPaidPlan(seatGate.ent.plan) &&
-    seatGate.ent.memberCount >= seatGate.ent.seatQuantity
-  ) {
+  if (seatGate.shouldBumpSeats) {
     try {
-      await recountSeatsAfterMembershipChange(workspaceId);
-      // recount bumps to current memberCount; invitee not yet a member — bump +1
       const { bumpSubscriptionSeats } = await import("@/lib/billing-sync");
       await bumpSubscriptionSeats(workspaceId, seatGate.ent.memberCount + 1);
     } catch (err) {
@@ -110,7 +101,7 @@ export async function inviteMemberAction(
         err instanceof Error ? err.message : "Could not add a billed seat.";
       return {
         ok: false,
-        error: `${message} Update billing or upgrade the plan, then try again.`,
+        error: `${message} Manage seats under Settings → Manage Workspaces.`,
       };
     }
   }
@@ -229,11 +220,7 @@ export async function acceptInviteAction(
   if (!seatGate.ok) {
     return { ok: false, error: seatGate.error };
   }
-  if (
-    seatGate.ok &&
-    isPaidPlan(seatGate.ent.plan) &&
-    seatGate.ent.memberCount >= seatGate.ent.seatQuantity
-  ) {
+  if (seatGate.shouldBumpSeats) {
     try {
       const { bumpSubscriptionSeats } = await import("@/lib/billing-sync");
       await bumpSubscriptionSeats(

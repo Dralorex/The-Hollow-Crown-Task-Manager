@@ -783,6 +783,10 @@ model WorkspaceBilling {
   /** After invoice.payment_failed — entitlements stay until this instant. */
   paymentGraceUntil    DateTime?
   lastInvoiceStatus    String?
+  /** At renewal, drop billed seats down to active member count. */
+  autoCloseUnusedSeats Boolean          @default(true)
+  /** When a join would exceed seatQuantity, bump seats (prorated) instead of blocking. */
+  autoAddSeats         Boolean          @default(false)
   createdAt            DateTime         @default(now())
   updatedAt            DateTime         @updatedAt
 
