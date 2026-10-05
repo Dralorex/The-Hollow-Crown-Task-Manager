@@ -87,6 +87,8 @@ export default async function WorkspacePage({
     tag?: string;
     setup?: string;
     inbox?: string;
+    billing?: string;
+    session_id?: string;
   }>;
 }) {
   const user = await getCurrentUser();
@@ -97,11 +99,26 @@ export default async function WorkspacePage({
   const showSetup = sp.setup === "1";
   const inbox =
     sp.inbox === "mine" ? "mine" : sp.inbox === "review" ? "review" : null;
+  const billingSuccess = sp.billing === "success";
+  const checkoutSessionId = sp.session_id?.trim() || "";
 
   const membership = await prisma.membership.findUnique({
     where: { workspaceId_userId: { workspaceId, userId: user.id } },
   });
   if (!membership) redirect("/app");
+
+  // Sync plan immediately on return from Stripe (webhooks can lag / miss locally).
+  let billingReconcileMessage: string | null = null;
+  if (billingSuccess && checkoutSessionId) {
+    const { reconcileCheckoutSession } = await import("@/lib/billing-sync");
+    const reconciled = await reconcileCheckoutSession({
+      sessionId: checkoutSessionId,
+      workspaceId,
+    });
+    billingReconcileMessage = reconciled.ok
+      ? `Plan updated: ${reconciled.plan}.`
+      : `Payment received, but plan sync needs a refresh: ${reconciled.error}`;
+  }
 
   await syncDueRecurrences(workspaceId);
 
@@ -627,6 +644,15 @@ export default async function WorkspacePage({
         canEdit={canEditBase && !workspaceArchived}
         enabled={ui.onboarding}
       >
+        {billingReconcileMessage ? (
+          <p
+            className="mb-4 rounded-md bg-[#0A3D45]/8 px-3 py-2 text-sm text-[#0A3D45]"
+            role="status"
+          >
+            {billingReconcileMessage}
+          </p>
+        ) : null}
+
         <div className="flex flex-wrap items-end justify-between gap-4">
           <div>
             <AppLink

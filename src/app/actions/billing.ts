@@ -178,7 +178,8 @@ export async function startWorkspaceCheckoutAction(
       plan,
       interval,
       seats,
-      successUrl: `${base}/app/w/${workspaceId}?billing=success`,
+      // {CHECKOUT_SESSION_ID} is filled by Stripe so we can sync without waiting on webhooks.
+      successUrl: `${base}/app/w/${workspaceId}?billing=success&session_id={CHECKOUT_SESSION_ID}`,
       cancelUrl: `${base}/app/w/${workspaceId}?billing=cancel`,
     });
     if (!session.url) {

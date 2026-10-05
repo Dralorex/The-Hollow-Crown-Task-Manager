@@ -391,6 +391,84 @@ export async function handleCheckoutCompleted(session: Stripe.Checkout.Session) 
   await syncSubscriptionToWorkspace(subscription);
 }
 
+/**
+ * Called when the user returns from Checkout (?billing=success&session_id=…).
+ * Webhooks can lag or miss locally if `stripe listen` isn't running — this
+ * syncs entitlements immediately from the completed session.
+ */
+export async function reconcileCheckoutSession(opts: {
+  sessionId: string;
+  workspaceId: string;
+}): Promise<{ ok: true; plan: PlanId } | { ok: false; error: string }> {
+  const stripe = getStripe();
+  if (!stripe) return { ok: false, error: "Stripe is not configured." };
+
+  try {
+    const session = await stripe.checkout.sessions.retrieve(opts.sessionId, {
+      expand: ["subscription"],
+    });
+    const sessionWorkspace =
+      session.metadata?.workspaceId?.trim() ||
+      session.client_reference_id?.trim() ||
+      "";
+    if (sessionWorkspace && sessionWorkspace !== opts.workspaceId) {
+      return { ok: false, error: "Checkout session is for a different workspace." };
+    }
+    if (session.status !== "complete" && session.payment_status !== "paid") {
+      // subscription mode may be "paid" / complete asynchronously
+      if (session.status !== "complete") {
+        return { ok: false, error: "Checkout is not complete yet. Refresh in a moment." };
+      }
+    }
+
+    // Prefer session metadata when writing subscription metadata.
+    if (!session.metadata?.workspaceId) {
+      session.metadata = {
+        ...(session.metadata ?? {}),
+        workspaceId: opts.workspaceId,
+      };
+    }
+
+    await handleCheckoutCompleted(session);
+
+    const billing = await prisma.workspaceBilling.findUnique({
+      where: { workspaceId: opts.workspaceId },
+    });
+    if (!billing || billing.plan === "FREE") {
+      // Fallback: scan customer subscriptions for this workspace.
+      if (session.customer) {
+        const customerId =
+          typeof session.customer === "string"
+            ? session.customer
+            : session.customer.id;
+        const subs = await stripe.subscriptions.list({
+          customer: customerId,
+          status: "all",
+          limit: 20,
+        });
+        const match = subs.data.find(
+          (s) => s.metadata?.workspaceId === opts.workspaceId,
+        );
+        if (match) {
+          await syncSubscriptionToWorkspace(match);
+        }
+      }
+    }
+
+    const after = await prisma.workspaceBilling.findUnique({
+      where: { workspaceId: opts.workspaceId },
+    });
+    if (!after) {
+      return { ok: false, error: "Billing row missing after sync." };
+    }
+    return { ok: true, plan: after.plan as PlanId };
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Reconcile failed.";
+    console.error("[billing:reconcile]", message);
+    return { ok: false, error: message };
+  }
+}
+
 export async function handleInvoicePaymentFailed(invoice: Stripe.Invoice) {
   const stripe = getStripe();
   if (!stripe) return;
