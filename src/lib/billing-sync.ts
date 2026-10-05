@@ -24,6 +24,9 @@ function stripeInterval(interval: BillingInterval): "month" | "year" {
   return interval === "YEARLY" ? "year" : "month";
 }
 
+/** Stripe tax category: SaaS — business use (Managed Payments eligibility). */
+const SAAS_TAX_CODE = "txcd_10103001";
+
 async function ensureProduct(
   stripe: Stripe,
   name: string,
@@ -33,8 +36,17 @@ async function ensureProduct(
   const found = existing.data.find(
     (p) => p.metadata?.rowgonKey === metadata.rowgonKey && p.active,
   );
-  if (found) return found.id;
-  const created = await stripe.products.create({ name, metadata });
+  if (found) {
+    if (!found.tax_code) {
+      await stripe.products.update(found.id, { tax_code: SAAS_TAX_CODE });
+    }
+    return found.id;
+  }
+  const created = await stripe.products.create({
+    name,
+    metadata,
+    tax_code: SAAS_TAX_CODE,
+  });
   return created.id;
 }
 
@@ -103,6 +115,9 @@ export async function createCheckoutSubscription(opts: {
     success_url: opts.successUrl,
     cancel_url: opts.cancelUrl,
     client_reference_id: opts.workspaceId,
+    // Account default is Managed Payments on; disable for standard SaaS Checkout
+    // until tax/residency is fully configured. Products still get a SaaS tax_code.
+    managed_payments: { enabled: false },
     metadata: {
       workspaceId: opts.workspaceId,
       plan: opts.plan,
