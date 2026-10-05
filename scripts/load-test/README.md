@@ -1,80 +1,82 @@
-# Load test harness — 50 users × 30 minutes
+# Load test harness — 50 users × 30 minutes (multi-system)
 
-Simulates busy usage so you can watch **Neon / Vercel / Ably** dashboards and ground real costs.  
-**Resend is avoided** (load users have digests off; write path sends no email).
+One run exercises as much of the stack as you have configured, so you don’t burn
+Neon/Vercel/Ably on chat-only and then redo work for R2/Cron/Stripe later.
+
+## What gets hit
+
+| System | How | Needs |
+|--------|-----|--------|
+| Neon + app pages | `/app`, workspace, chat | DB + running app |
+| Pulse / presence | `/api/pulse`, chat presence | session cookies |
+| Ably | `/api/ably/auth` + chat message fan-out | `ABLY_API_KEY` |
+| Chat writes | `/api/load-test/action` message/heartbeat | `LOAD_TEST_SECRET` |
+| **R2** | upload → download → **delete** (tiny `.txt`) | R2 env + Admin+ user |
+| **Cron** | all 4 `/api/cron/*` stubs ~every 2.5 min | `CRON_SECRET` |
+| **Stripe** | ensure customer + `products.list` / retrieve (test mode) | `STRIPE_SECRET_KEY` (test) |
+| **SSO** | GET `/api/sso/start` scaffold | none (works disabled) |
+| **Resend** | avoided | load users have digests off |
+
+You do **not** need full Team/Business UI for this. Bootstrap + secrets are enough.  
+Virus scan stays deferred.
 
 ## Safety
 
-- Users are named `loaduser_001` … (not the `test` cleanup pattern).
-- Runner **refuses** `rowgon.com` unless `LOAD_TEST_ALLOW_PROD=1`.
-- Write API returns **404** unless `LOAD_TEST_SECRET` is set on the server.
-- Prefer **local** or **Vercel Preview** — not production.
-
-## Cost note
-
-This **does** burn real quota on whatever you point at (Neon compute, Vercel invocations, Ably messages). A 30‑minute staging run is usually small; production is a bad idea.
+- Users: `loaduser_001`… (digests off)
+- Refuses `rowgon.com` unless `LOAD_TEST_ALLOW_PROD=1`
+- Write API **404** if `LOAD_TEST_SECRET` unset
+- R2 objects are deleted in the same cycle (minimal leftover storage)
+- Stripe uses **test mode** API only (no real charges). Prefer `sk_test_…`
 
 ## Setup
 
-1. Ensure DB env is set (`.env` → Neon local/preview).
-2. Add to `.env` (and Preview env if used):
-
 ```bash
+# .env (local) and/or Vercel Preview
 LOAD_TEST_SECRET="long-random-string"
+CRON_SECRET="another-long-secret"
+# Plus whatever you want exercised:
+# ABLY_API_KEY=...
+# R2_*=...
+# STRIPE_SECRET_KEY=sk_test_...
+# STRIPE_WEBHOOK_SECRET=...   # optional for this harness
 ```
-
-3. Seed users:
 
 ```bash
 npm run load-test:seed
-# optional: LOAD_TEST_USERS=50
-```
+npm run dev   # or Preview URL with same secrets
 
-4. Start the app:
-
-```bash
-npm run dev
-# or use a Preview URL with LOAD_TEST_SECRET configured
-```
-
-5. Run 30 minutes with 50 workers:
-
-```bash
 LOAD_TEST_BASE_URL=http://localhost:3000 \
 LOAD_TEST_SECRET=long-random-string \
+CRON_SECRET=another-long-secret \
 npm run load-test:run
 ```
 
-Optional:
+Smoke first:
 
 ```bash
-LOAD_TEST_DURATION_MIN=30
-LOAD_TEST_VUS=50
+LOAD_TEST_DURATION_MIN=5 LOAD_TEST_VUS=10 ... npm run load-test:run
 ```
 
-6. Cleanup when finished:
+Cleanup:
 
 ```bash
 npm run load-test:cleanup
 ```
 
-## What each fake user does
+## Reading the run
 
-Rough mix every few seconds:
+At start the runner prints a **system probe** (`ready` / `not_configured` / `fail_*`).  
+At the end it prints per-action ok/fail/skip averages.
 
-- Open `/app`, workspace, `/app/chat`
-- Hit `/api/pulse`, `/api/ably/auth`, chat presence
-- POST load-test message / heartbeat (if secret set)
+Then open dashboards for that window:
 
-## After the run
+- Neon CU / connections  
+- Vercel invocations  
+- Ably messages  
+- R2 Class A/B (should be modest; storage ≈ 0 if deletes work)  
+- Stripe test-mode API log (customers/products)  
+- Cron responses / `CronRun` rows if migrated  
 
-Check for the same time window:
+## Cost honesty
 
-| Dashboard | Look at |
-|-----------|---------|
-| Neon | CU-hours, connections, storage |
-| Vercel | Invocations / Fluid compute |
-| Ably | Messages / connections |
-| Resend | Should stay flat |
-
-Use that slice to sanity-check the “100 users” infra row in the pricing sheet (scale ~2× for 100 if the mix is similar).
+Whatever you point at **will use real quota** for ~30 minutes. Doing core + R2 + Cron + Stripe together is the efficient way to gather cost signals once.

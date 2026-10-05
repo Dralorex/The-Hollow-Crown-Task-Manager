@@ -99,15 +99,17 @@ async function main() {
   }
 
   for (const u of users.slice(1)) {
+    // loaduser_002 = ADMIN so R2 cycles can run on 2 workers (Admin+ required)
+    const role = u.index === 2 ? "ADMIN" : "MEMBER";
     await prisma.membership.upsert({
       where: {
         workspaceId_userId: { workspaceId: workspace.id, userId: u.id },
       },
-      update: {},
+      update: { role },
       create: {
         workspaceId: workspace.id,
         userId: u.id,
-        role: "MEMBER",
+        role,
       },
     });
   }
