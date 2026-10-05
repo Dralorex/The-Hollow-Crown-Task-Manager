@@ -66,11 +66,11 @@ If the build says the connection URL is empty, the env vars were not applied to 
 | `npx prisma migrate deploy` | Apply migrations |
 | `npx prisma studio` | Browse data |
 
-## Infra bootstrap (payments, files, cron, SSO)
+## Infra + Phase 1 monetization (payments, files, cron, SSO)
 
-Scaffolding only — **no pricing UI, seat ladders, or entitlement enforcement yet**.
-Ready for monetization feature work next. **Virus scanning is planned later** (hook
-comments around upload confirm); do not enable a scanner in this phase.
+Infra bootstrap plus Phase 1 money/hard caps. **Virus scanning is planned later**
+(hook comments around upload confirm); do not enable a scanner in this phase.
+Downgrade wizards / Stats / org pool = later phases.
 
 ### Stripe + Phase 1 monetization
 
