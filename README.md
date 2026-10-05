@@ -66,28 +66,29 @@ If the build says the connection URL is empty, the env vars were not applied to 
 | `npx prisma migrate deploy` | Apply migrations |
 | `npx prisma studio` | Browse data |
 
-## Infra bootstrap (payments, files, cron, SSO)
+## Infra + Phase 1 monetization (payments, files, cron, SSO)
 
-Scaffolding only — **no pricing UI, seat ladders, or entitlement enforcement yet**.
-Ready for monetization feature work next. **Virus scanning is planned later** (hook
-comments around upload confirm); do not enable a scanner in this phase.
+Infra bootstrap plus Phase 1 money/hard caps. **Virus scanning is planned later**
+(hook comments around upload confirm); do not enable a scanner in this phase.
+Downgrade wizards / Stats / org pool = later phases.
 
-### Stripe (test mode)
+### Stripe + Phase 1 monetization
+
+Seat ladder: **1–5 free · 6–25 $2.50 · 26–100 $5 · 101+ $10**. Bases: Team $12 / Business $30 / Enterprise $80 (yearly = 10× monthly). See `docs/MONETIZATION_PHASE1.md`.
 
 1. Create a [Stripe](https://dashboard.stripe.com/test/apikeys) account and copy **test** keys into `.env`:
    - `STRIPE_SECRET_KEY`
-   - `STRIPE_PUBLISHABLE_KEY` (optional until client Checkout)
+   - `STRIPE_PUBLISHABLE_KEY` (optional)
    - `STRIPE_WEBHOOK_SECRET` (from CLI or Dashboard webhook)
 2. Forward webhooks locally:
 
 ```bash
-stripe listen --forward-to localhost:3000/api/stripe/webhook
-# then:
-stripe trigger checkout.session.completed
+stripe listen --forward-to localhost:3000/api/stripe/webhook \
+  --events checkout.session.completed,customer.subscription.updated,customer.subscription.deleted,invoice.paid,invoice.payment_failed
 ```
 
-3. A verified event is stored in `StripeWebhookEvent` (idempotent).  
-4. Server helpers: `ensureStripeCustomerAction`, `createBillingPortalSessionAction` (Owner-gated when a workspace is supplied). Secrets never enter client bundles.
+3. Owner opens a workspace → **Billing** sidebar → Upgrade (Checkout).  
+4. Webhooks sync `WorkspaceBilling`; invites/roles/group chats enforce Free caps.
 
 ### Cloudflare R2 (private files)
 

@@ -22,6 +22,7 @@ import {
   canManagePeople,
   requireMembership,
 } from "@/lib/permissions";
+import { assertCanCreateGroupChat } from "@/lib/entitlements";
 import { normalizeUsername, personLabel } from "@/lib/utils";
 import type { Role } from "@/generated/prisma/client";
 import type { ActionResult } from "@/app/actions/auth";
@@ -449,6 +450,9 @@ export async function createGroupChatAction(
   if (!canCreateGroups(membership.role)) {
     return { ok: false, error: "Only admins and owners can create workspace group chats." };
   }
+
+  const chatGate = await assertCanCreateGroupChat(workspaceId);
+  if (!chatGate.ok) return { ok: false, error: chatGate.error };
 
   const name = String(formData.get("name") ?? "").trim();
   if (!name) return { ok: false, error: "Group needs a name." };

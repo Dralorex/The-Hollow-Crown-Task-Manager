@@ -21,6 +21,7 @@ import { PendingInvitesDropdown } from "@/app/components/pending-invites-dropdow
 import { ChatSidebarSection } from "@/app/components/chat-sidebar-section";
 import { WorkspaceMembersPanel } from "@/app/components/workspace-members-panel";
 import { WorkspaceRolesPanel } from "@/app/components/workspace-roles-panel";
+import { WorkspaceBillingPanel } from "@/app/components/workspace-billing-panel";
 import { UrgencyChipSettings } from "@/app/components/urgency-chip-settings";
 import {
   PersonalWorkspaceInterfacePanel,
@@ -43,7 +44,7 @@ import {
   loadUserCustomRoleIds,
   type FolderAccessRow,
 } from "@/lib/folder-access";
-import { canEditContent, canManagePeople } from "@/lib/permissions";
+import { canEditContent, canManagePeople, isOwnerOnlyAction } from "@/lib/permissions";
 import { compareTasksByUrgency } from "@/lib/urgency";
 import { personLabel, searchRelevance } from "@/lib/utils";
 import { parseTagNames } from "@/lib/tags";
@@ -59,6 +60,7 @@ import {
   collectDescendantIds,
 } from "@/lib/folder-tree";
 import { syncDueRecurrences } from "@/lib/recurrence";
+import { getWorkspaceEntitlements } from "@/lib/entitlements";
 
 const taskInclude = {
   assignee: true,
@@ -376,6 +378,11 @@ export default async function WorkspacePage({
   const canInvite = canManagePeople(membership.role) && !workspaceArchived;
   const canArchive = canManagePeople(membership.role);
   const canManageRoles = canManagePeople(membership.role);
+  const isOwner = isOwnerOnlyAction(membership.role);
+  const entitlements = await getWorkspaceEntitlements(workspaceId);
+  const billingRow = await prisma.workspaceBilling.findUnique({
+    where: { workspaceId },
+  });
 
   const personalInterface = parsePersonalInterfacePrefs(user.interfacePrefsJson);
   const workspaceInterfaceDefaults = parseWorkspaceInterfaceDefaults(
@@ -818,6 +825,20 @@ export default async function WorkspacePage({
                 workspaceRoles={roleOptions}
               />
             ) : null}
+
+            <WorkspaceBillingPanel
+              workspaceId={workspaceId}
+              planName={entitlements.definition.name}
+              plan={entitlements.plan}
+              status={entitlements.status}
+              memberCount={entitlements.memberCount}
+              seatQuantity={entitlements.seatQuantity}
+              interval={billingRow?.interval ?? null}
+              periodEnd={billingRow?.currentPeriodEnd?.toISOString() ?? null}
+              inPaymentGrace={entitlements.inPaymentGrace}
+              billingOk={entitlements.billingOk}
+              isOwner={isOwner}
+            />
           </aside>
 
           <WorkspaceSoftNavPanel>
