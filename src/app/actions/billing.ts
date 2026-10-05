@@ -39,6 +39,20 @@ async function requireOwner(workspaceId: string) {
 }
 
 /**
+ * Checkout/portal return URL. In local dev, prefer localhost even when
+ * APP_URL points at production (otherwise Stripe sends you to rowgon.com
+ * and you look “signed out”).
+ */
+function getBillingReturnBaseUrl() {
+  const override = process.env.BILLING_RETURN_URL?.trim().replace(/\/$/, "");
+  if (override) return override;
+  if (process.env.NODE_ENV === "development") {
+    return "http://localhost:3000";
+  }
+  return getAppBaseUrl();
+}
+
+/**
  * Create or return the Stripe Customer linked to this user.
  * Owner-only when workspaceId is provided.
  */
@@ -64,7 +78,30 @@ export async function ensureStripeCustomerAction(
   }
 
   if (user.stripeCustomerId) {
-    return { ok: true, customerId: user.stripeCustomerId };
+    try {
+      const existing = await stripe.customers.retrieve(user.stripeCustomerId);
+      if (!("deleted" in existing && existing.deleted)) {
+        return { ok: true, customerId: user.stripeCustomerId };
+      }
+    } catch (err) {
+      const code =
+        err && typeof err === "object" && "code" in err
+          ? String((err as { code?: string }).code)
+          : "";
+      const message = err instanceof Error ? err.message : String(err);
+      // Stale id (wrong Stripe account, deleted customer, test/live mix).
+      if (code !== "resource_missing" && !/No such customer/i.test(message)) {
+        throw err;
+      }
+      console.warn(
+        "[billing] clearing stale stripeCustomerId",
+        user.stripeCustomerId,
+      );
+    }
+    await prisma.user.update({
+      where: { id: user.id },
+      data: { stripeCustomerId: null },
+    });
   }
 
   const customer = await stripe.customers.create({
@@ -116,7 +153,7 @@ export async function createBillingPortalSessionAction(
   const returnPath = workspaceId ? `/app/w/${workspaceId}` : "/app";
   const session = await stripe.billingPortal.sessions.create({
     customer: customerId,
-    return_url: `${getAppBaseUrl()}${returnPath}`,
+    return_url: `${getBillingReturnBaseUrl()}${returnPath}`,
   });
 
   return { ok: true, url: session.url, customerId };
@@ -170,7 +207,7 @@ export async function startWorkspaceCheckoutAction(
     };
   }
 
-  const base = getAppBaseUrl();
+  const base = getBillingReturnBaseUrl();
   try {
     const session = await createCheckoutSubscription({
       customerId: customerResult.customerId,
