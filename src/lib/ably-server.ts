@@ -1,5 +1,8 @@
 import Ably from "ably";
-import { userChannelName } from "@/lib/ably-channels";
+import {
+  chatPresenceChannelName,
+  userChannelName,
+} from "@/lib/ably-channels";
 import type { ChatMessageEvent } from "@/lib/chat-message-events";
 import { CHAT_MESSAGE_ABLY } from "@/lib/chat-message-events";
 import { getNavBadgeCounts } from "@/lib/nav-badges";
@@ -8,7 +11,12 @@ export function isAblyConfigured(): boolean {
   return Boolean(process.env.ABLY_API_KEY?.trim());
 }
 
-export { userChannelName };
+export { userChannelName, chatPresenceChannelName };
+
+export type ChatPresenceData = {
+  username: string;
+  typing?: boolean;
+};
 
 let restSingleton: Ably.Rest | null | undefined;
 
@@ -23,7 +31,12 @@ function getRest(): Ably.Rest | null {
   return restSingleton;
 }
 
-/** Create a token request scoped to this user's channel (for browser auth). */
+/**
+ * Browser token: own user channel (badges/messages) + chat presence channels.
+ * `chat:*` is presence/subscribe only — messages still fan out on user channels.
+ * Presence enter/update/leave happens on the browser Realtime connection
+ * (Rest cannot hold presence members on serverless).
+ */
 export async function createUserTokenRequest(userId: string) {
   const rest = getRest();
   if (!rest) return null;
@@ -32,8 +45,41 @@ export async function createUserTokenRequest(userId: string) {
     clientId: userId,
     capability: {
       [channel]: ["subscribe", "presence", "history"],
+      "chat:*": ["subscribe", "presence", "history"],
     },
   });
+}
+
+/** Snapshot of who is currently present (JSON GET / load-test). */
+export async function getChatPresenceSnapshot(groupId: string): Promise<
+  {
+    userId: string;
+    username: string;
+    typing: boolean;
+  }[]
+> {
+  const rest = getRest();
+  if (!rest || !groupId) return [];
+  try {
+    const page = await rest.channels
+      .get(chatPresenceChannelName(groupId))
+      .presence.get();
+    const members = page.items ?? [];
+    return members.map((m) => {
+      const data = (m.data ?? {}) as { username?: string; typing?: boolean };
+      return {
+        userId: m.clientId,
+        username:
+          typeof data.username === "string" && data.username
+            ? data.username
+            : m.clientId,
+        typing: Boolean(data.typing),
+      };
+    });
+  } catch (err) {
+    console.error("[ably] presence get failed", groupId, err);
+    return [];
+  }
 }
 
 async function publishToUser(userId: string, name: string, data: unknown) {

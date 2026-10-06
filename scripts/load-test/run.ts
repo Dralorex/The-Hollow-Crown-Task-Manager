@@ -483,8 +483,10 @@ async function runAction(
   }
   if (action === "presence") {
     const gid = ctx.groupId || ctx.hqGroupId;
+    // Short JSON snapshot (Ably or Neon) — never long-poll SSE.
     const res = await fetch(`${ctx.baseUrl}/api/chat/${gid}/presence`, {
       headers,
+      signal: AbortSignal.timeout(8_000),
     });
     return res.ok ? "ok" : "fail";
   }

@@ -26,6 +26,8 @@ type BadgeState = {
 
 const BadgeContext = createContext<BadgeState | null>(null);
 const RealtimeEnabledContext = createContext(false);
+const AblyClientContext = createContext<Ably.Realtime | null>(null);
+const RealtimeUserIdContext = createContext<string>("");
 
 export function useLiveBadges(fallback: BadgeState): BadgeState {
   return useContext(BadgeContext) ?? fallback;
@@ -34,6 +36,15 @@ export function useLiveBadges(fallback: BadgeState): BadgeState {
 /** True when Ably is configured (push path; soft-poll can stay off). */
 export function useRealtimeEnabled() {
   return useContext(RealtimeEnabledContext);
+}
+
+/** Shared Ably Realtime client (null when disconnected / disabled). */
+export function useAblyClient() {
+  return useContext(AblyClientContext);
+}
+
+export function useRealtimeUserId() {
+  return useContext(RealtimeUserIdContext);
 }
 
 type RefreshPayload = { paths?: string[] };
@@ -72,6 +83,7 @@ export function RealtimeProvider({
     unreadCount: initialUnreadCount,
     chatUnreadCount: initialChatUnreadCount,
   });
+  const [client, setClient] = useState<Ably.Realtime | null>(null);
 
   useEffect(() => {
     pathnameRef.current = pathname;
@@ -85,16 +97,20 @@ export function RealtimeProvider({
   }, [initialUnreadCount, initialChatUnreadCount]);
 
   useEffect(() => {
-    if (!enabled || !userId || !pollingActive) return;
+    if (!enabled || !userId || !pollingActive) {
+      setClient(null);
+      return;
+    }
 
-    const client = new Ably.Realtime({
+    const realtime = new Ably.Realtime({
       authUrl: "/api/ably/auth",
       authMethod: "GET",
       clientId: userId,
       autoConnect: true,
     });
+    setClient(realtime);
 
-    const channel = client.channels.get(userChannelName(userId));
+    const channel = realtime.channels.get(userChannelName(userId));
 
     const onBadges = (message: Ably.Message) => {
       const data = (message.data ?? {}) as BadgesPayload;
@@ -169,6 +185,7 @@ export function RealtimeProvider({
     void channel.subscribe("refresh", onRefresh).catch(ignoreAblyTeardown);
 
     return () => {
+      setClient(null);
       try {
         channel.unsubscribe("badges", onBadges);
         channel.unsubscribe("badge-delta", onBadgeDelta);
@@ -180,7 +197,7 @@ export function RealtimeProvider({
       try {
         // close() is sync/void; in-flight subscribe/auth promises reject when
         // the connection drops — those are handled via .catch above.
-        client.close();
+        realtime.close();
       } catch {
         /* ignore */
       }
@@ -192,7 +209,11 @@ export function RealtimeProvider({
 
   return (
     <RealtimeEnabledContext.Provider value={enabled}>
-      <BadgeContext.Provider value={value}>{children}</BadgeContext.Provider>
+      <RealtimeUserIdContext.Provider value={userId}>
+        <AblyClientContext.Provider value={client}>
+          <BadgeContext.Provider value={value}>{children}</BadgeContext.Provider>
+        </AblyClientContext.Provider>
+      </RealtimeUserIdContext.Provider>
     </RealtimeEnabledContext.Provider>
   );
 }

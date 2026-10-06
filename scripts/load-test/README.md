@@ -16,7 +16,9 @@ Also seeds: multiple folders, ~80+ open backlog tasks, HQ chat + Watercooler + P
 
 ## Systems exercised (when configured)
 
-Core pages · pulse/presence · Ably · chat · **tasks** (create/claim/complete/review) · birthdays · **R2** (tiny up/down/delete) · **Cron** (few sweeps) · **Stripe test** pings · SSO scaffold.
+Core pages · pulse/presence (short JSON, Ably Presence live) · Ably · chat · **tasks** (create/claim/complete/review) · birthdays · **R2** (tiny up/down/delete) · **Cron** (few sweeps) · **Stripe test** pings · SSO scaffold.
+
+Presence is **not** SSE — `GET /api/chat/:id/presence` returns a JSON snapshot (8s timeout in the runner). Live online/typing uses Ably Presence on `chat:{groupId}:presence`.
 
 ## Run
 
