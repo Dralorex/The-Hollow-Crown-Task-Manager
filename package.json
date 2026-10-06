@@ -14,7 +14,10 @@
     "db:seed": "tsx prisma/seed.ts",
     "smoke:r2": "tsx scripts/smoke-r2.ts",
     "postinstall": "prisma generate",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "load-test:seed": "tsx scripts/load-test/seed.ts",
+    "load-test:run": "tsx scripts/load-test/run.ts",
+    "load-test:cleanup": "tsx scripts/load-test/cleanup.ts"
   },
   "prisma": {
     "seed": "tsx prisma/seed.ts"

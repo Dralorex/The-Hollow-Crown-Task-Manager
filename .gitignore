@@ -54,3 +54,6 @@ prisma/dev.db-journal
 .claude/
 .windsurf/
 skills-lock.json
+
+# load-test harness credentials (sessions)
+scripts/load-test/.credentials.json
