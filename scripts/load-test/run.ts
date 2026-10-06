@@ -85,6 +85,14 @@ async function main() {
   const durationMs = durationMin * 60 * 1000;
 
   const credPath = path.resolve(process.cwd(), CREDENTIALS_PATH);
+  console.log(`Load test runner → ${baseUrl}`);
+  console.log(`Credentials: ${credPath}`);
+  if (!secret) {
+    console.warn(
+      "LOAD_TEST_SECRET unset — browse/pulse only; write actions (chat/tasks/R2/Stripe) skipped.",
+    );
+  }
+
   const creds = JSON.parse(await readFile(credPath, "utf8")) as LoadCredentials;
   if (!creds.users?.length) {
     throw new Error("No users in credentials file. Run seed first.");
@@ -116,7 +124,16 @@ async function main() {
     ),
   );
 
-  const caps = await probeSystems(baseUrl, secret, cronSecret, creds);
+  console.log("Probing systems…");
+  let caps: Caps;
+  try {
+    caps = await probeSystems(baseUrl, secret, cronSecret, creds);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    throw new Error(
+      `Cannot reach ${baseUrl} (${msg}). Start the app in another terminal (npm run dev), then retry.`,
+    );
+  }
   console.log("\n=== System probe ===");
   for (const [k, v] of Object.entries(caps)) {
     console.log(`  ${k.padEnd(12)} ${v}`);
@@ -552,3 +569,8 @@ function casualMessage(username: string) {
   ];
   return pick(lines);
 }
+
+main().catch((e) => {
+  console.error(e instanceof Error ? e.message : e);
+  process.exit(1);
+});
