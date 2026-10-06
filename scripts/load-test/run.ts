@@ -26,8 +26,29 @@ type Stats = {
   byPersona: Record<string, { actions: number; messages: number }>;
 };
 
-function assertSafeBaseUrl(baseUrl: string) {
-  const u = new URL(baseUrl);
+function resolveBaseUrl(): string {
+  const raw = process.env.LOAD_TEST_BASE_URL?.trim();
+  let baseUrl = raw || "http://localhost:3000";
+  // Allow host:port without scheme (common .env mistake)
+  if (!/^[a-zA-Z][a-zA-Z\d+\-.]*:/.test(baseUrl)) {
+    baseUrl = `http://${baseUrl}`;
+  }
+  baseUrl = baseUrl.replace(/\/$/, "");
+
+  let u: URL;
+  try {
+    u = new URL(baseUrl);
+  } catch {
+    throw new Error(
+      `Invalid LOAD_TEST_BASE_URL=${JSON.stringify(raw ?? "")}. Use e.g. http://localhost:3000 (or leave unset).`,
+    );
+  }
+  if (u.protocol !== "http:" && u.protocol !== "https:") {
+    throw new Error(
+      `LOAD_TEST_BASE_URL must be http(s), got ${JSON.stringify(baseUrl)}.`,
+    );
+  }
+
   const host = u.hostname.toLowerCase();
   const prodLike =
     host === "rowgon.com" ||
@@ -38,6 +59,7 @@ function assertSafeBaseUrl(baseUrl: string) {
       `Refusing to load-test ${host}. Use staging/Preview/local, or set LOAD_TEST_ALLOW_PROD=1.`,
     );
   }
+  return baseUrl;
 }
 
 function track(
@@ -68,11 +90,7 @@ function pick<T>(arr: T[]): T {
 }
 
 async function main() {
-  const baseUrl = (process.env.LOAD_TEST_BASE_URL || "http://localhost:3000").replace(
-    /\/$/,
-    "",
-  );
-  assertSafeBaseUrl(baseUrl);
+  const baseUrl = resolveBaseUrl();
 
   const secret = process.env.LOAD_TEST_SECRET?.trim();
   const cronSecret = process.env.CRON_SECRET?.trim();
