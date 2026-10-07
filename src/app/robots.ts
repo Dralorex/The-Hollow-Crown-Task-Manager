@@ -1,43 +1,17 @@
 import type { MetadataRoute } from "next";
+import { AI_SCRAPER_UA_TOKENS } from "@/lib/ai-scrapers";
 
 /**
  * Search engines may index public pages.
- * Known AI *training* / bulk scrapers are disallowed.
+ * Known AI training / bulk scrapers are disallowed (and also 403’d in proxy.ts).
  *
- * Notes:
- * - robots.txt is honor-system; aggressive scrapers can ignore it (use WAF later if needed).
- * - You cannot whitelist “only my ChatGPT / Cursor account” here — those tools don’t
- *   crawl as a personal bot. Blocking GPTBot still allows you to paste/use the site
- *   yourself; it opts out of OpenAI’s training crawler.
- * - Google-Extended opts out of Gemini/Vertex training without hurting Google Search.
- * - /app and APIs stay disallowed for everyone.
+ * robots.txt is honor-system; the proxy WAF enforces for crawlers that send
+ * these User-Agent strings. You can still use ChatGPT/Cursor to build the site.
  */
-const AI_SCRAPER_AGENTS = [
-  "GPTBot", // OpenAI training
-  "Google-Extended", // Gemini / Vertex training opt-out (not Googlebot)
-  "ClaudeBot",
-  "anthropic-ai",
-  "Applebot-Extended",
-  "Bytespider",
-  "CCBot",
-  "Diffbot",
-  "FacebookBot",
-  "meta-externalagent",
-  "Meta-ExternalAgent",
-  "cohere-ai",
-  "Amazonbot",
-  "Ai2Bot",
-  "AI2Bot",
-  "Img2Dataset",
-  "Timpibot",
-  "Webzio-Extended",
-  "YouBot",
-] as const;
-
 export default function robots(): MetadataRoute.Robots {
   return {
     rules: [
-      ...AI_SCRAPER_AGENTS.map((userAgent) => ({
+      ...AI_SCRAPER_UA_TOKENS.map((userAgent) => ({
         userAgent,
         disallow: ["/"] as string[],
       })),
