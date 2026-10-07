@@ -89,6 +89,7 @@ export function ChatComposer({
   memberUsernames = [],
   notifyMode,
   currentUserId,
+  showTypingLine = true,
   onOptimisticAppend,
   onOptimisticConfirm,
   onOptimisticFail,
@@ -99,6 +100,8 @@ export function ChatComposer({
   memberUsernames?: { userId: string; username: string }[];
   notifyMode: "ALL" | "MENTIONS" | "MUTE";
   currentUserId?: string;
+  /** When false, typing lives in the members panel instead. */
+  showTypingLine?: boolean;
   onOptimisticAppend?: (msg: OptimisticThreadMessage) => void;
   onOptimisticConfirm?: (
     tempId: string,
@@ -272,7 +275,9 @@ export function ChatComposer({
 
   return (
     <div className="mt-4 space-y-2">
-      <ChatTypingLine groupId={groupId} memberUsernames={memberUsernames} />
+      {showTypingLine ? (
+        <ChatTypingLine groupId={groupId} memberUsernames={memberUsernames} />
+      ) : null}
       <form
         onSubmit={onSubmit}
         className="relative flex flex-col gap-2 sm:flex-row sm:items-end"
