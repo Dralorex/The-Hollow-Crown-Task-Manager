@@ -731,9 +731,13 @@ export async function sendMessageAction(
     .map((m) => m.userId)
     .filter((id) => id !== user.id);
 
-  // Fan-out after the response — keep send path to auth + insert.
+  // Live delivery first (before notifications). Clients dedupe by message id.
+  // Keep this inside after() so serverless doesn't freeze the isolate early,
+  // but run Ably push before slower notification writes.
   after(async () => {
     try {
+      await pushChatMessageForUsers(otherMemberIds, payload);
+
       const now = Date.now();
       const preview = body.length > 120 ? `${body.slice(0, 117)}…` : body;
       const titlePrefix = group.isDirect
@@ -782,15 +786,9 @@ export async function sendMessageAction(
       }
 
       const notified = notificationRows.map((n) => n.userId);
-
-      // chat:message already dispatches list refresh on clients; skip full
-      // `refresh` + getNavBadgeCounts recount on the hot send path.
-      await Promise.all([
-        pushChatMessageForUsers(otherMemberIds, payload),
-        notified.length > 0
-          ? pushBadgeDeltaForUsers(notified, { chatUnreadDelta: 1 })
-          : Promise.resolve(),
-      ]);
+      if (notified.length > 0) {
+        await pushBadgeDeltaForUsers(notified, { chatUnreadDelta: 1 });
+      }
     } catch (err) {
       console.error("[chat] send fan-out failed", err);
     }
@@ -1232,6 +1230,58 @@ export async function fetchChatPresence(groupId: string) {
   );
 
   return { ok: true as const, presence, selfId: user.id };
+}
+
+/** Lightweight poll for open threads when Ably is down / reconnecting. */
+export async function fetchChatMessagesSinceAction(
+  groupId: string,
+  afterCreatedAt?: string | null,
+) {
+  const user = await requireUser();
+  if (!groupId) return { ok: false as const, error: "Missing chat." };
+
+  const member = await prisma.chatMember.findUnique({
+    where: { groupId_userId: { groupId, userId: user.id } },
+    select: { id: true },
+  });
+  if (!member) return { ok: false as const, error: "You’re not in this chat." };
+
+  const afterDate =
+    afterCreatedAt && !Number.isNaN(Date.parse(afterCreatedAt))
+      ? new Date(afterCreatedAt)
+      : null;
+
+  const rows = await prisma.message.findMany({
+    where: {
+      groupId,
+      ...(afterDate ? { createdAt: { gt: afterDate } } : {}),
+    },
+    orderBy: { createdAt: "asc" },
+    take: afterDate ? 50 : 40,
+    include: {
+      sender: {
+        select: {
+          id: true,
+          username: true,
+          nickname: true,
+          deletedAt: true,
+          deletedUsername: true,
+        },
+      },
+    },
+  });
+
+  return {
+    ok: true as const,
+    messages: rows.map((msg) => ({
+      id: msg.id,
+      body: msg.body,
+      createdAt: msg.createdAt.toISOString(),
+      senderId: msg.senderId,
+      senderLabel:
+        msg.senderId === user.id ? "You" : personLabel(msg.sender),
+    })),
+  };
 }
 
 export async function updateFriendProfileAction(
