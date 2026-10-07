@@ -1,3 +1,4 @@
+import { after } from "next/server";
 import { redirect } from "next/navigation";
 import { AppLink } from "@/app/components/app-link";
 import { InlineActionForm } from "@/app/components/forms";
@@ -62,17 +63,32 @@ import {
 import { syncDueRecurrences } from "@/lib/recurrence";
 import { getWorkspaceEntitlements } from "@/lib/entitlements";
 
+const personSelect = {
+  id: true,
+  username: true,
+  nickname: true,
+} as const;
+
 const taskInclude = {
-  assignee: true,
-  folder: true,
-  lastUnclaimedBy: true,
-  lastSentBackBy: true,
-  tags: { include: { tag: true } },
+  assignee: { select: personSelect },
+  folder: { select: { id: true, name: true } },
+  lastUnclaimedBy: { select: personSelect },
+  lastSentBackBy: { select: personSelect },
+  tags: {
+    include: {
+      tag: { select: { name: true, isPublic: true, creatorId: true } },
+    },
+  },
   checklistItems: { orderBy: { sortOrder: "asc" as const } },
   activities: {
     orderBy: { createdAt: "desc" as const },
-    take: 40,
-    include: { actor: { select: { username: true, nickname: true } } },
+    take: 20,
+    select: {
+      id: true,
+      message: true,
+      createdAt: true,
+      type: true,
+    },
   },
 };
 
@@ -98,15 +114,17 @@ export default async function WorkspacePage({
   const inbox =
     sp.inbox === "mine" ? "mine" : sp.inbox === "review" ? "review" : null;
 
-  const membership = await prisma.membership.findUnique({
-    where: { workspaceId_userId: { workspaceId, userId: user.id } },
-  });
-  if (!membership) redirect("/app");
+  const [membership, workspace] = await Promise.all([
+    prisma.membership.findUnique({
+      where: { workspaceId_userId: { workspaceId, userId: user.id } },
+    }),
+    prisma.workspace.findUnique({ where: { id: workspaceId } }),
+  ]);
+  if (!membership || !workspace) redirect("/app");
 
-  await syncDueRecurrences(workspaceId);
-
-  const workspace = await prisma.workspace.findUniqueOrThrow({
-    where: { id: workspaceId },
+  // Don't block first paint on recurrence spawn — cron/next load picks up rows.
+  after(() => {
+    void syncDueRecurrences(workspaceId);
   });
 
   if (!canViewArchived(user.id, membership.role, workspace)) {
@@ -165,21 +183,16 @@ export default async function WorkspacePage({
   const activeFolders = folders.filter((f) => !isArchived(f));
   const roleOptions = workspaceRoles.map((r) => ({ id: r.id, name: r.name }));
 
-  const taskCountRows = await prisma.task.groupBy({
-    by: ["folderId"],
-    where: {
-      workspaceId,
-      status: "OPEN",
-      assigneeId: null,
-    },
-    _count: { _all: true },
-  });
-  const directCounts = new Map(
-    taskCountRows.map((r) => [r.folderId, r._count._all]),
-  );
-  const folderCounts = computeFolderTaskCounts(folders, directCounts);
-
-  const [doneCountRows, totalCountRows] = await Promise.all([
+  const [taskCountRows, doneCountRows, totalCountRows] = await Promise.all([
+    prisma.task.groupBy({
+      by: ["folderId"],
+      where: {
+        workspaceId,
+        status: "OPEN",
+        assigneeId: null,
+      },
+      _count: { _all: true },
+    }),
     prisma.task.groupBy({
       by: ["folderId"],
       where: { workspaceId, status: "DONE" },
@@ -191,6 +204,10 @@ export default async function WorkspacePage({
       _count: { _all: true },
     }),
   ]);
+  const directCounts = new Map(
+    taskCountRows.map((r) => [r.folderId, r._count._all]),
+  );
+  const folderCounts = computeFolderTaskCounts(folders, directCounts);
   const directTotalCounts = new Map(
     totalCountRows.map((r) => [r.folderId, r._count._all]),
   );
@@ -379,11 +396,6 @@ export default async function WorkspacePage({
   const canArchive = canManagePeople(membership.role);
   const canManageRoles = canManagePeople(membership.role);
   const isOwner = isOwnerOnlyAction(membership.role);
-  const entitlements = await getWorkspaceEntitlements(workspaceId);
-  const billingRow = await prisma.workspaceBilling.findUnique({
-    where: { workspaceId },
-  });
-
   const personalInterface = parsePersonalInterfacePrefs(user.interfacePrefsJson);
   const workspaceInterfaceDefaults = parseWorkspaceInterfaceDefaults(
     workspace.interfaceDefaultsJson,
@@ -396,12 +408,6 @@ export default async function WorkspacePage({
   const showPulse = ui.pulse;
   const showInboxTabs = ui.inbox;
 
-  const roleActivity = await getRoleActivityUnread(
-    user.id,
-    workspaceId,
-    userRoleIds,
-  );
-
   const currentRequiredRoleIds = currentFolder
     ? (foldersById.get(currentFolder.id)?.requiredRoleIds ?? [])
     : [];
@@ -409,37 +415,122 @@ export default async function WorkspacePage({
     userRoleIds.has(id),
   );
 
-  const pendingInvites = canInvite
-    ? await prisma.invite.findMany({
-        where: { workspaceId, status: "PENDING" },
-        orderBy: { createdAt: "desc" },
-      })
-    : [];
+  const pulseFolderFilter = canManagePeople(membership.role)
+    ? {}
+    : { folderId: { in: [...accessibleFolderIds] } };
+  const now = new Date();
 
-  const workspaceMembers = await prisma.membership.findMany({
-    where: { workspaceId },
-    include: {
-      user: true,
-      customRoles: { include: { role: true } },
-    },
-    orderBy: { createdAt: "asc" },
-  });
+  const friendLabelSelect = {
+    id: true,
+    username: true,
+    nickname: true,
+    deletedAt: true,
+    deletedUsername: true,
+  } as const;
 
-  const [acceptedFriendships, pendingFriendships] = await Promise.all([
+  const [
+    entitlements,
+    billingRow,
+    roleActivity,
+    pendingInvites,
+    workspaceMembers,
+    acceptedFriendships,
+    pendingFriendships,
+    statusCountRows,
+    overdueCount,
+    myClaimedCount,
+    needsReviewCount,
+    taskCount,
+    savedTemplates,
+  ] = await Promise.all([
+    getWorkspaceEntitlements(workspaceId),
+    prisma.workspaceBilling.findUnique({ where: { workspaceId } }),
+    getRoleActivityUnread(user.id, workspaceId, userRoleIds),
+    canInvite
+      ? prisma.invite.findMany({
+          where: { workspaceId, status: "PENDING" },
+          orderBy: { createdAt: "desc" },
+        })
+      : Promise.resolve([]),
+    prisma.membership.findMany({
+      where: { workspaceId },
+      include: {
+        user: { select: friendLabelSelect },
+        customRoles: { include: { role: { select: { id: true, name: true } } } },
+      },
+      orderBy: { createdAt: "asc" },
+    }),
     prisma.friendship.findMany({
       where: {
         status: "ACCEPTED",
         OR: [{ requesterId: user.id }, { addresseeId: user.id }],
       },
-      include: { requester: true, addressee: true },
+      include: {
+        requester: { select: friendLabelSelect },
+        addressee: { select: friendLabelSelect },
+      },
     }),
     prisma.friendship.findMany({
       where: {
         status: "PENDING",
         OR: [{ requesterId: user.id }, { addresseeId: user.id }],
       },
+      select: { requesterId: true, addresseeId: true },
+    }),
+    showPulse
+      ? prisma.task.groupBy({
+          by: ["status"],
+          where: { workspaceId, ...pulseFolderFilter },
+          _count: { _all: true },
+        })
+      : Promise.resolve([] as { status: string; _count: { _all: number } }[]),
+    showPulse
+      ? prisma.task.count({
+          where: {
+            workspaceId,
+            ...pulseFolderFilter,
+            dueDate: { lt: now },
+            status: { not: "DONE" },
+          },
+        })
+      : Promise.resolve(0),
+    prisma.task.count({
+      where: {
+        workspaceId,
+        ...pulseFolderFilter,
+        assigneeId: user.id,
+        status: { in: ["CLAIMED", "OPEN"] },
+      },
+    }),
+    prisma.task.count({
+      where: {
+        workspaceId,
+        ...pulseFolderFilter,
+        status: "IN_REVIEW",
+      },
+    }),
+    prisma.task.count({
+      where: { workspaceId, ...pulseFolderFilter },
+    }),
+    prisma.folderTemplate.findMany({
+      where: { workspaceId },
+      orderBy: { name: "asc" },
+      select: { id: true, name: true, treeJson: true },
     }),
   ]);
+
+  const statusCountMap = new Map(
+    statusCountRows.map((r) => [r.status, r._count._all]),
+  );
+  const counts = showPulse
+    ? {
+        open: statusCountMap.get("OPEN") ?? 0,
+        claimed: statusCountMap.get("CLAIMED") ?? 0,
+        inReview: statusCountMap.get("IN_REVIEW") ?? 0,
+        overdue: overdueCount,
+        done: statusCountMap.get("DONE") ?? 0,
+      }
+    : null;
 
   const friendIds = new Set(
     acceptedFriendships.map((row) =>
@@ -494,53 +585,6 @@ export default async function WorkspacePage({
     id: m.user.id,
     username: m.user.username,
   }));
-
-  const allWorkspaceTasks = await prisma.task.findMany({
-    where: {
-      workspaceId,
-      ...(canManagePeople(membership.role)
-        ? {}
-        : { folderId: { in: [...accessibleFolderIds] } }),
-    },
-    select: {
-      id: true,
-      status: true,
-      dueDate: true,
-      assigneeId: true,
-      folderId: true,
-    },
-  });
-
-  const now = new Date();
-  const counts = showPulse
-    ? {
-        open: allWorkspaceTasks.filter((t) => t.status === "OPEN").length,
-        claimed: allWorkspaceTasks.filter((t) => t.status === "CLAIMED").length,
-        inReview: allWorkspaceTasks.filter((t) => t.status === "IN_REVIEW")
-          .length,
-        overdue: allWorkspaceTasks.filter(
-          (t) => t.dueDate && t.dueDate < now && t.status !== "DONE",
-        ).length,
-        done: allWorkspaceTasks.filter((t) => t.status === "DONE").length,
-      }
-    : null;
-
-  const myClaimedCount = allWorkspaceTasks.filter(
-    (t) =>
-      t.assigneeId === user.id &&
-      (t.status === "CLAIMED" || t.status === "OPEN"),
-  ).length;
-  const needsReviewCount = allWorkspaceTasks.filter(
-    (t) => t.status === "IN_REVIEW",
-  ).length;
-
-  const savedTemplates = await prisma.folderTemplate.findMany({
-    where: { workspaceId },
-    orderBy: { name: "asc" },
-    select: { id: true, name: true, treeJson: true },
-  });
-
-  const taskCount = allWorkspaceTasks.length;
   const hasFolder = activeFolders.length > 0;
   const hasTask = taskCount > 0;
   const hasInvite = pendingInvites.length > 0 || workspaceMembers.length > 1;
