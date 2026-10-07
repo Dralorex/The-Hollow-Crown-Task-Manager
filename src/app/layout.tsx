@@ -18,7 +18,7 @@ const body = Nunito({
 });
 
 export const metadata: Metadata = {
-  metadataBase: new URL("https://rowgon.com"),
+  metadataBase: new URL("https://www.rowgon.com"),
   title: "Rowgon Task Manager",
   description:
     "Nested folders, urgency that pulls due tasks up, friends, and private chats.",
@@ -27,6 +27,10 @@ export const metadata: Metadata = {
     title: "Rowgon",
     capable: true,
     statusBarStyle: "default",
+  },
+  robots: {
+    index: true,
+    follow: true,
   },
 };
 
