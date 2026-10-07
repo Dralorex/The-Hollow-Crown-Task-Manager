@@ -225,14 +225,45 @@ export default async function ChatPage({
     ]),
   );
 
-  const unreadByGroup = await prisma.notification.findMany({
-    where: {
-      userId: user.id,
-      type: { in: ["CHAT_MESSAGE", "CHAT_MENTION"] },
-      read: false,
-    },
-    select: { meta: true },
-  });
+  const [
+    unreadByGroup,
+    dmRequests,
+    adminWorkspaces,
+    allWorkspaces,
+    acceptedFriendships,
+  ] = await Promise.all([
+    prisma.notification.findMany({
+      where: {
+        userId: user.id,
+        type: { in: ["CHAT_MESSAGE", "CHAT_MENTION"] },
+        read: false,
+      },
+      select: { meta: true },
+    }),
+    prisma.dmRequest.findMany({
+      where: { toUserId: user.id, status: "PENDING" },
+      include: { fromUser: { select: userLabelSelect } },
+    }),
+    prisma.membership.findMany({
+      where: { userId: user.id, role: { in: ["OWNER", "ADMIN"] } },
+      include: { workspace: { select: { id: true, name: true } } },
+    }),
+    prisma.membership.findMany({
+      where: { userId: user.id },
+      include: { workspace: { select: { id: true, name: true } } },
+    }),
+    prisma.friendship.findMany({
+      where: {
+        status: "ACCEPTED",
+        OR: [{ requesterId: user.id }, { addresseeId: user.id }],
+      },
+      include: {
+        requester: { select: userLabelSelect },
+        addressee: { select: userLabelSelect },
+      },
+    }),
+  ]);
+
   const unreadCounts = new Map<string, number>();
   for (const n of unreadByGroup) {
     if (!n.meta) continue;
@@ -245,21 +276,6 @@ export default async function ChatPage({
       /* ignore */
     }
   }
-
-  const dmRequests = await prisma.dmRequest.findMany({
-    where: { toUserId: user.id, status: "PENDING" },
-    include: { fromUser: true },
-  });
-
-  const adminWorkspaces = await prisma.membership.findMany({
-    where: { userId: user.id, role: { in: ["OWNER", "ADMIN"] } },
-    include: { workspace: true },
-  });
-
-  const allWorkspaces = await prisma.membership.findMany({
-    where: { userId: user.id },
-    include: { workspace: true },
-  });
 
   const adminWorkspaceIds = new Set(adminWorkspaces.map((m) => m.workspaceId));
 
@@ -300,14 +316,6 @@ export default async function ChatPage({
   for (const wsId of adminWorkspaceIds) {
     adminMembersByWorkspace[wsId] = membersByWorkspace[wsId] ?? [];
   }
-
-  const acceptedFriendships = await prisma.friendship.findMany({
-    where: {
-      status: "ACCEPTED",
-      OR: [{ requesterId: user.id }, { addresseeId: user.id }],
-    },
-    include: { requester: true, addressee: true },
-  });
 
   const friendOptions = acceptedFriendships.map((row) => {
     const friend = row.requesterId === user.id ? row.addressee : row.requester;
