@@ -26,18 +26,41 @@ type Stats = {
   byPersona: Record<string, { actions: number; messages: number }>;
 };
 
-function assertSafeBaseUrl(baseUrl: string) {
-  const u = new URL(baseUrl);
-  const host = u.hostname.toLowerCase();
-  const prodLike =
-    host === "rowgon.com" ||
-    host === "www.rowgon.com" ||
-    host.endsWith(".rowgon.com");
-  if (prodLike && process.env.LOAD_TEST_ALLOW_PROD !== "1") {
+/** Accept `http://host`, bare `host:port`, trim trailing slash. */
+function normalizeBaseUrl(raw: string): string {
+  const trimmed = raw.trim().replace(/\/$/, "");
+  try {
+    const withScheme = /^https?:\/\//i.test(trimmed)
+      ? trimmed
+      : `http://${trimmed}`;
+    const u = new URL(withScheme);
+    const host = u.hostname.toLowerCase();
+    const prodLike =
+      host === "rowgon.com" ||
+      host === "www.rowgon.com" ||
+      host.endsWith(".rowgon.com");
+    if (prodLike && process.env.LOAD_TEST_ALLOW_PROD !== "1") {
+      throw new Error(
+        `Refusing to load-test ${host}. Use staging/Preview/local, or set LOAD_TEST_ALLOW_PROD=1.`,
+      );
+    }
+    return `${u.protocol}//${u.host}`;
+  } catch (e) {
+    if (e instanceof Error && e.message.startsWith("Refusing")) throw e;
     throw new Error(
-      `Refusing to load-test ${host}. Use staging/Preview/local, or set LOAD_TEST_ALLOW_PROD=1.`,
+      `Invalid LOAD_TEST_BASE_URL=${JSON.stringify(raw)}. Use e.g. http://localhost:3000 or a Preview URL.`,
     );
   }
+}
+
+const FETCH_TIMEOUT_MS = 15_000;
+const PRESENCE_TIMEOUT_MS = 8_000;
+
+function timedFetch(input: string, init?: RequestInit, timeoutMs = FETCH_TIMEOUT_MS) {
+  return fetch(input, {
+    ...init,
+    signal: init?.signal ?? AbortSignal.timeout(timeoutMs),
+  });
 }
 
 function track(
@@ -68,11 +91,9 @@ function pick<T>(arr: T[]): T {
 }
 
 async function main() {
-  const baseUrl = (process.env.LOAD_TEST_BASE_URL || "http://localhost:3000").replace(
-    /\/$/,
-    "",
+  const baseUrl = normalizeBaseUrl(
+    process.env.LOAD_TEST_BASE_URL || "http://localhost:3000",
   );
-  assertSafeBaseUrl(baseUrl);
 
   const secret = process.env.LOAD_TEST_SECRET?.trim();
   const cronSecret = process.env.CRON_SECRET?.trim();
@@ -267,14 +288,14 @@ async function probeSystems(
   const owner = creds.users[0]!;
   const cookie = `rowgon_session=${owner.sessionToken}`;
 
-  const home = await fetch(`${baseUrl}/app`, {
+  const home = await timedFetch(`${baseUrl}/app`, {
     headers: { Cookie: cookie },
     redirect: "manual",
   });
   const core =
     home.status >= 200 && home.status < 400 ? "ready" : `fail_${home.status}`;
 
-  const ably = await fetch(`${baseUrl}/api/ably/auth`, {
+  const ably = await timedFetch(`${baseUrl}/api/ably/auth`, {
     headers: { Cookie: cookie },
   });
   const ablyStatus =
@@ -311,7 +332,7 @@ async function probeSystems(
 
   let cron = "no_secret";
   if (cronSecret) {
-    const cRes = await fetch(`${baseUrl}/api/cron/retention-purge`, {
+    const cRes = await timedFetch(`${baseUrl}/api/cron/retention-purge`, {
       headers: { Authorization: `Bearer ${cronSecret}` },
     });
     cron =
@@ -322,7 +343,9 @@ async function probeSystems(
           : `fail_${cRes.status}`;
   }
 
-  const ssoRes = await fetch(`${baseUrl}/api/sso/start`, { redirect: "manual" });
+  const ssoRes = await timedFetch(`${baseUrl}/api/sso/start`, {
+    redirect: "manual",
+  });
   const sso =
     ssoRes.status === 200 || ssoRes.status === 302 || ssoRes.status === 403
       ? ssoRes.status === 302
@@ -339,7 +362,7 @@ async function postAction(
   secret: string,
   body: Record<string, unknown>,
 ) {
-  return fetch(`${baseUrl}/api/load-test/action`, {
+  return timedFetch(`${baseUrl}/api/load-test/action`, {
     method: "POST",
     headers: {
       Cookie: `rowgon_session=${sessionToken}`,
@@ -451,45 +474,48 @@ async function runAction(
   const headers = { Cookie: ctx.cookie };
 
   if (action === "app_home") {
-    const res = await fetch(`${ctx.baseUrl}/app`, {
+    const res = await timedFetch(`${ctx.baseUrl}/app`, {
       headers,
       redirect: "manual",
     });
     return res.status >= 200 && res.status < 400 ? "ok" : "fail";
   }
   if (action === "workspace") {
-    const res = await fetch(`${ctx.baseUrl}/app/w/${ctx.workspaceId}`, {
+    const res = await timedFetch(`${ctx.baseUrl}/app/w/${ctx.workspaceId}`, {
       headers,
       redirect: "manual",
     });
     return res.status >= 200 && res.status < 400 ? "ok" : "fail";
   }
   if (action === "chat_page") {
-    const res = await fetch(`${ctx.baseUrl}/app/chat`, {
+    const res = await timedFetch(`${ctx.baseUrl}/app/chat`, {
       headers,
       redirect: "manual",
     });
     return res.status >= 200 && res.status < 400 ? "ok" : "fail";
   }
   if (action === "pulse") {
-    const res = await fetch(`${ctx.baseUrl}/api/pulse`, { headers });
+    const res = await timedFetch(`${ctx.baseUrl}/api/pulse`, { headers });
     return res.ok ? "ok" : "fail";
   }
   if (action === "ably_auth") {
-    const res = await fetch(`${ctx.baseUrl}/api/ably/auth`, { headers });
+    const res = await timedFetch(`${ctx.baseUrl}/api/ably/auth`, { headers });
     if (res.status === 200) return "ok";
     if (res.status === 503) return "skip";
     return "fail";
   }
   if (action === "presence") {
     const gid = ctx.groupId || ctx.hqGroupId;
-    const res = await fetch(`${ctx.baseUrl}/api/chat/${gid}/presence`, {
-      headers,
-    });
+    // Short JSON snapshot (Ably or Neon) — never long-poll / SSE.
+    const res = await timedFetch(
+      `${ctx.baseUrl}/api/chat/${gid}/presence`,
+      { headers },
+      PRESENCE_TIMEOUT_MS,
+    );
     return res.ok ? "ok" : "fail";
   }
   if (action === "sso_start") {
-    const res = await fetch(`${ctx.baseUrl}/api/sso/start`, {
+    const res = await timedFetch(`${ctx.baseUrl}/api/sso/start`, {
       redirect: "manual",
     });
     if (res.status === 200 || res.status === 302 || res.status === 403) {
@@ -552,6 +578,8 @@ async function runAction(
       return "ok";
     }
     if (res.status === 503) return "skip";
+    // Stale seeds may still have EDITOR on "admin" persona — not a harness fail.
+    if (action === "r2_cycle" && res.status === 403) return "skip";
     return "fail";
   }
   return "fail";

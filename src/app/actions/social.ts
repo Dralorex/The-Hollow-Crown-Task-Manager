@@ -14,7 +14,6 @@ import {
 import { handleBirthdayOnFriendship } from "@/lib/birthday";
 import type { ChatMessageEvent } from "@/lib/chat-message-events";
 import { derivePresence } from "@/lib/chat-presence";
-import { publishChatPresence } from "@/lib/chat-presence-bus";
 import { prisma } from "@/lib/db";
 import { OPEN_THREAD_MS, parseMentions } from "@/lib/mentions";
 import {
@@ -604,7 +603,7 @@ export async function sendMessageAction(
   }
 
   const nowDate = new Date();
-  // Clear typing + mark seen; don't block return on presence bus.
+  // Clear typing + mark seen on Neon; Ably typing cleared client-side on send.
   const clearTyping = prisma.chatMember.update({
     where: { id: member.id },
     data: {
@@ -792,8 +791,6 @@ export async function sendMessageAction(
           ? pushBadgeDeltaForUsers(notified, { chatUnreadDelta: 1 })
           : Promise.resolve(),
       ]);
-
-      publishChatPresence(groupId);
     } catch (err) {
       console.error("[chat] send fan-out failed", err);
     }
@@ -1105,7 +1102,7 @@ export async function pulseChatPresenceAction(groupId: string): Promise<void> {
     where: { groupId, userId: user.id },
     data: { lastActiveAt: now, lastSeenAt: now },
   });
-  publishChatPresence(groupId);
+  // Live online/typing fan-out is Ably Presence on the browser connection.
 }
 
 /** Clear presence when leaving a thread so list/hub tabs still get notifications. */
@@ -1114,9 +1111,9 @@ export async function clearChatPresenceAction(groupId: string): Promise<void> {
   if (!groupId) return;
   await prisma.chatMember.updateMany({
     where: { groupId, userId: user.id },
-    data: { lastActiveAt: null },
+    data: { lastActiveAt: null, typingAt: null },
   });
-  publishChatPresence(groupId);
+  // Ably Presence leave runs in the client (chat-presence / connection close).
 }
 
 export async function setChatNotifyModeAction(
@@ -1177,7 +1174,6 @@ export async function touchChatSeenAction(
     if (cleared.count > 0) {
       await pushBadgesForUsers([user.id]);
     }
-    publishChatPresence(groupId);
   });
 
   return { ok: true };
@@ -1195,7 +1191,7 @@ export async function setTypingAction(groupId: string): Promise<ActionResult> {
     where: { id: member.id },
     data: { typingAt: now, lastSeenAt: now, lastActiveAt: now },
   });
-  publishChatPresence(groupId);
+  // Live typing fan-out: client setLocalChatTyping → Ably Presence update.
   return { ok: true };
 }
 
@@ -1210,7 +1206,6 @@ export async function clearTypingAction(groupId: string): Promise<ActionResult> 
     where: { id: member.id },
     data: { typingAt: null },
   });
-  publishChatPresence(groupId);
   return { ok: true };
 }
 

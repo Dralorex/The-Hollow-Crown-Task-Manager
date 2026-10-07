@@ -11,7 +11,10 @@ import {
   setChatNotifyModeAction,
   setTypingAction,
 } from "@/app/actions/social";
-import { ChatTypingLine } from "@/app/components/chat-presence";
+import {
+  ChatTypingLine,
+  setLocalChatTyping,
+} from "@/app/components/chat-presence";
 import { highlightMessageParts, type TaskLinkInfo } from "@/lib/task-links";
 
 export type OptimisticThreadMessage = {
@@ -169,13 +172,16 @@ export function ChatComposer({
       const now = Date.now();
       if (now - lastTypingSent.current > 2000) {
         lastTypingSent.current = now;
+        setLocalChatTyping(groupId, true);
         void setTypingAction(groupId);
       }
       if (typingTimer.current) window.clearTimeout(typingTimer.current);
       typingTimer.current = window.setTimeout(() => {
+        setLocalChatTyping(groupId, false);
         void clearTypingAction(groupId);
       }, 3500);
     } else {
+      setLocalChatTyping(groupId, false);
       void clearTypingAction(groupId);
     }
   }
@@ -183,6 +189,7 @@ export function ChatComposer({
   useEffect(() => {
     return () => {
       if (typingTimer.current) window.clearTimeout(typingTimer.current);
+      setLocalChatTyping(groupId, false);
       void clearTypingAction(groupId);
     };
   }, [groupId]);
@@ -214,6 +221,7 @@ export function ChatComposer({
     setSendError(null);
     setBody("");
     setPicker(null);
+    setLocalChatTyping(groupId, false);
     void clearTypingAction(groupId);
 
     onOptimisticAppend?.({
