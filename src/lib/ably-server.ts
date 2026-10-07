@@ -5,6 +5,7 @@ import {
 } from "@/lib/ably-channels";
 import type { ChatMessageEvent } from "@/lib/chat-message-events";
 import { CHAT_MESSAGE_ABLY } from "@/lib/chat-message-events";
+import { prisma } from "@/lib/db";
 import { getNavBadgeCounts } from "@/lib/nav-badges";
 
 export function isAblyConfigured(): boolean {
@@ -17,6 +18,9 @@ export type ChatPresenceData = {
   username: string;
   typing?: boolean;
 };
+
+/** Soft cap so huge membership lists don't blow token size. */
+const MAX_PRESENCE_CHANNELS = 80;
 
 let restSingleton: Ably.Rest | null | undefined;
 
@@ -32,21 +36,49 @@ function getRest(): Ably.Rest | null {
 }
 
 /**
- * Browser token: own user channel (badges/messages) + chat presence channels.
- * `chat:*` is presence/subscribe only — messages still fan out on user channels.
+ * Browser token: own user channel (badges/messages) + presence only on chats
+ * the user belongs to (no global `chat:*`). Messages still fan out on user channels.
  * Presence enter/update/leave happens on the browser Realtime connection
  * (Rest cannot hold presence members on serverless).
  */
-export async function createUserTokenRequest(userId: string) {
+export async function createUserTokenRequest(
+  userId: string,
+  opts?: { ensureGroupIds?: string[] },
+) {
   const rest = getRest();
   if (!rest) return null;
-  const channel = userChannelName(userId);
+
+  const memberships = await prisma.chatMember.findMany({
+    where: { userId },
+    select: { groupId: true, lastActiveAt: true, lastSeenAt: true },
+    orderBy: [{ lastActiveAt: "desc" }, { lastSeenAt: "desc" }],
+    take: MAX_PRESENCE_CHANNELS,
+  });
+
+  const groupIds = new Set(memberships.map((m) => m.groupId));
+  for (const gid of opts?.ensureGroupIds ?? []) {
+    if (!gid || groupIds.has(gid)) continue;
+    const member = await prisma.chatMember.findUnique({
+      where: { groupId_userId: { groupId: gid, userId } },
+      select: { groupId: true },
+    });
+    if (member) groupIds.add(member.groupId);
+  }
+
+  type CapOps = Ably.capabilityOp[];
+  const presenceOps: CapOps = ["subscribe", "presence", "history"];
+  const capability: { [key: string]: CapOps } = {
+    [userChannelName(userId)]: presenceOps,
+  };
+  for (const groupId of groupIds) {
+    capability[chatPresenceChannelName(groupId)] = presenceOps;
+  }
+
+  // 15m TTL — re-auth picks up new chat memberships without long-lived wildcards.
   return rest.auth.createTokenRequest({
     clientId: userId,
-    capability: {
-      [channel]: ["subscribe", "presence", "history"],
-      "chat:*": ["subscribe", "presence", "history"],
-    },
+    capability,
+    ttl: 15 * 60 * 1000,
   });
 }
 

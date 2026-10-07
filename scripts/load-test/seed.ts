@@ -111,9 +111,10 @@ async function main() {
     });
   }
 
+  // Admin persona must be ADMIN+ so load-test r2_cycle (canManagePeople) succeeds.
+  // Owner (index 1) already has OWNER; other admin personas get ADMIN.
   for (const u of users.slice(1)) {
-    const role =
-      u.index === 2 ? "ADMIN" : u.persona === "admin" ? "EDITOR" : "MEMBER";
+    const role = u.persona === "admin" ? "ADMIN" : "MEMBER";
     await prisma.membership.upsert({
       where: {
         workspaceId_userId: { workspaceId: workspace.id, userId: u.id },

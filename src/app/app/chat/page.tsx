@@ -1,7 +1,8 @@
 import { format } from "date-fns";
 import { AppLink } from "@/app/components/app-link";
 import { InlineActionForm } from "@/app/components/forms";
-import { ChatMessageBody } from "@/app/components/chat-composer";import { ChatPresenceStrip } from "@/app/components/chat-presence";
+import { ChatMessageBody } from "@/app/components/chat-composer";
+import { ChatPresenceStrip } from "@/app/components/chat-presence";
 import { ChatRowMenu } from "@/app/components/chat-row-menu";
 import { ChatThreadView } from "@/app/components/chat-thread-view";
 import { MarkChatSeen } from "@/app/components/mark-chat-seen";
@@ -49,16 +50,26 @@ export default async function ChatPage({
 
   let tab: Tab = "hub";
 
+  const userLabelSelect = {
+    id: true,
+    username: true,
+    nickname: true,
+    deletedAt: true,
+    deletedUsername: true,
+  } as const;
+
   const memberships = await prisma.chatMember.findMany({
     where: { userId },
     include: {
       group: {
         include: {
-          members: { include: { user: true } },
+          members: { include: { user: { select: userLabelSelect } } },
           messages: {
             orderBy: { createdAt: "desc" },
             take: 1,
-            include: { sender: true },
+            include: {
+              sender: { select: userLabelSelect },
+            },
           },
         },
       },
@@ -117,7 +128,7 @@ export default async function ChatPage({
         where: { groupId: active.id },
         orderBy: { createdAt: "asc" },
         take: 120,
-        include: { sender: true },
+        include: { sender: { select: userLabelSelect } },
       })
     : [];
 
@@ -257,7 +268,7 @@ export default async function ChatPage({
     allWorkspaceIds.length > 0
       ? await prisma.membership.findMany({
           where: { workspaceId: { in: allWorkspaceIds } },
-          include: { user: true },
+          include: { user: { select: userLabelSelect } },
         })
       : [];
 

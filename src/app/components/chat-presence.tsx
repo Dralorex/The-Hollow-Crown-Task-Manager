@@ -28,7 +28,8 @@ type SharedPresence = {
 /** One Ably presence subscription (or JSON poller) per group across Strip + TypingLine. */
 const shared = new Map<string, SharedPresence>();
 
-const PRESENCE_POLL_MS = 8_000;
+/** No-Ably / fallback poll — never SSE. Keep slow to avoid Neon chatter. */
+const PRESENCE_POLL_MS = 20_000;
 
 type PresenceData = { username?: string; typing?: boolean };
 
@@ -128,11 +129,32 @@ function ensurePresence(
   }
 
   if (wantAbly && opts.client) {
-    const channel = opts.client.channels.get(chatPresenceChannelName(groupId));
+    const client = opts.client;
+    const channel = client.channels.get(chatPresenceChannelName(groupId));
     entry.channel = channel;
 
     const onPresence = () => {
       void refreshFromChannel(channel);
+    };
+
+    const enterSelf = async () => {
+      const data = { username: opts.selfUsername, typing: false };
+      try {
+        await channel.presence.enter(data);
+        return;
+      } catch {
+        /* token may predate this membership — re-auth with groupId then retry */
+      }
+      if (cancelled) return;
+      try {
+        await client.auth.authorize(undefined, {
+          authUrl: `/api/ably/auth?groupId=${encodeURIComponent(groupId)}`,
+          authMethod: "GET",
+        });
+        await channel.presence.enter(data);
+      } catch {
+        /* enter may race with teardown / capability */
+      }
     };
 
     const ignoreTeardown = () => {};
@@ -140,14 +162,7 @@ function ensurePresence(
       .subscribe(onPresence)
       .then(async () => {
         if (cancelled) return;
-        try {
-          await channel.presence.enter({
-            username: opts.selfUsername,
-            typing: false,
-          });
-        } catch {
-          /* enter may race with teardown */
-        }
+        await enterSelf();
         await refreshFromChannel(channel);
       })
       .catch(ignoreTeardown);
@@ -175,7 +190,7 @@ function ensurePresence(
 
 /**
  * Update typing flag on the shared Ably presence member (instant local fan-out).
- * Server actions still persist Neon + Rest presence for non-browser clients.
+ * Neon typingAt is still written by setTypingAction for JSON/no-Ably fallback.
  */
 export function setLocalChatTyping(groupId: string, typing: boolean) {
   const entry = shared.get(groupId);
