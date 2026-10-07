@@ -201,7 +201,7 @@ export function setLocalChatTyping(groupId: string, typing: boolean) {
   });
 }
 
-function useChatPresence(
+export function useChatPresence(
   groupId: string,
   memberUsernames: { userId: string; username: string }[],
 ) {

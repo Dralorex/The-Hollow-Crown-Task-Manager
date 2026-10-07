@@ -44,6 +44,7 @@ export function ChatThreadView({
   taskOptions,
   memberUsernames,
   notifyMode,
+  showTypingLine = true,
 }: {
   groupId: string;
   currentUserId: string;
@@ -53,6 +54,7 @@ export function ChatThreadView({
   taskOptions: TaskOption[];
   memberUsernames: { userId: string; username: string }[];
   notifyMode: "ALL" | "MENTIONS" | "MUTE";
+  showTypingLine?: boolean;
 }) {
   const [messages, setMessages] = useState<ThreadMessage[]>(initialMessages);
   const bottomRef = useRef<HTMLDivElement | null>(null);
@@ -185,6 +187,7 @@ export function ChatThreadView({
           memberUsernames={memberUsernames}
           notifyMode={notifyMode}
           currentUserId={currentUserId}
+          showTypingLine={showTypingLine}
           onOptimisticAppend={(msg) => {
             setMessages((prev) => [...prev, msg]);
           }}
