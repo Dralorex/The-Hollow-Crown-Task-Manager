@@ -96,8 +96,12 @@ export function RealtimeProvider({
     });
   }, [initialUnreadCount, initialChatUnreadCount]);
 
+  // Stay connected on the chat page even if the tab blurs / goes "idle"
+  // (two-window testing, reading while the other person types).
+  const holdForOpenChat = pathname.startsWith("/app/chat");
+
   useEffect(() => {
-    if (!enabled || !userId || !pollingActive) {
+    if (!enabled || !userId || (!pollingActive && !holdForOpenChat)) {
       setClient(null);
       return;
     }
@@ -202,8 +206,9 @@ export function RealtimeProvider({
         /* ignore */
       }
     };
-    // pathname is read via ref so nav does not tear down the Ably connection.
-  }, [enabled, userId, pollingActive, router]);
+    // pathnameRef used for refresh matching; holdForOpenChat may reconnect when
+    // entering/leaving /app/chat so live messages stay subscribed.
+  }, [enabled, userId, pollingActive, holdForOpenChat, router]);
 
   const value = useMemo(() => badges, [badges]);
 

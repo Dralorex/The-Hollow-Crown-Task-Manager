@@ -12,6 +12,7 @@ import {
 import { sendMessageAction } from "@/app/actions/social";
 import { MarkChatSeen } from "@/app/components/mark-chat-seen";
 import {
+  useAblyClient,
   useLiveBadges,
   useRealtimeEnabled,
 } from "@/app/components/realtime-provider";
@@ -92,6 +93,8 @@ export function FloatingChatWidget({
   const hideOnChatPage = pathname.startsWith("/app/chat");
   const pollingActive = useActivePolling();
   const realtimeEnabled = useRealtimeEnabled();
+  const ablyClient = useAblyClient();
+  const liveAbly = realtimeEnabled && Boolean(ablyClient);
   const live = useLiveBadges({
     unreadCount: 0,
     chatUnreadCount,
@@ -200,10 +203,12 @@ export function FloatingChatWidget({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [ready, open, hideOnChatPage]);
 
-  // Soft-poll only when Ably is not configured (paused when tab hidden / idle).
+  // Soft-poll when Ably isn't connected (env off OR socket down). Faster while
+  // a thread is open so the floating panel still feels live.
   useEffect(() => {
-    if (realtimeEnabled) return;
+    if (liveAbly) return;
     if (!ready || !open || hideOnChatPage || !pollingActive) return;
+    const intervalMs = view === "thread" ? 4_000 : 20_000;
     const id = window.setInterval(() => {
       void refreshList();
       if (view === "thread" && (thread?.id || lastGroupId)) {
@@ -213,14 +218,14 @@ export function FloatingChatWidget({
           },
         );
       }
-    }, 45_000);
+    }, intervalMs);
     return () => window.clearInterval(id);
   }, [
     ready,
     open,
     hideOnChatPage,
     pollingActive,
-    realtimeEnabled,
+    liveAbly,
     view,
     thread?.id,
     lastGroupId,

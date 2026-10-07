@@ -48,21 +48,27 @@ export async function createUserTokenRequest(
   const rest = getRest();
   if (!rest) return null;
 
-  const memberships = await prisma.chatMember.findMany({
-    where: { userId },
-    select: { groupId: true, lastActiveAt: true, lastSeenAt: true },
-    orderBy: [{ lastActiveAt: "desc" }, { lastSeenAt: "desc" }],
-    take: MAX_PRESENCE_CHANNELS,
-  });
-
-  const groupIds = new Set(memberships.map((m) => m.groupId));
-  for (const gid of opts?.ensureGroupIds ?? []) {
-    if (!gid || groupIds.has(gid)) continue;
-    const member = await prisma.chatMember.findUnique({
-      where: { groupId_userId: { groupId: gid, userId } },
-      select: { groupId: true },
+  const groupIds = new Set<string>();
+  try {
+    const memberships = await prisma.chatMember.findMany({
+      where: { userId },
+      select: { groupId: true, lastActiveAt: true, lastSeenAt: true },
+      orderBy: [{ lastActiveAt: "desc" }, { lastSeenAt: "desc" }],
+      take: MAX_PRESENCE_CHANNELS,
     });
-    if (member) groupIds.add(member.groupId);
+    for (const m of memberships) groupIds.add(m.groupId);
+    for (const gid of opts?.ensureGroupIds ?? []) {
+      if (!gid || groupIds.has(gid)) continue;
+      const member = await prisma.chatMember.findUnique({
+        where: { groupId_userId: { groupId: gid, userId } },
+        select: { groupId: true },
+      });
+      if (member) groupIds.add(member.groupId);
+    }
+  } catch (err) {
+    // Still issue a user-channel token so badges/messages work even if
+    // presence channel listing fails.
+    console.error("[ably] presence capability lookup failed", userId, err);
   }
 
   type CapOps = Ably.capabilityOp[];
